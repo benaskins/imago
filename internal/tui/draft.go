@@ -39,9 +39,10 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	m.messages = draftMessages
 
 	req := &loop.Request{
-		Model:    config.DraftModel,
-		Messages: draftMessages,
-		Stream:   true,
+		Model:     config.DraftModel,
+		Messages:  draftMessages,
+		Stream:    true,
+		MaxTokens: config.DraftMaxTokens,
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)

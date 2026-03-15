@@ -385,10 +385,16 @@ func (m Model) viewInterview() string {
 // startLLM launches the LLM via loop.Stream and returns a command that
 // reads events from the channel.
 func (m Model) startLLM(modelName string) tea.Cmd {
+	maxTokens := config.InterviewMaxTokens
+	if m.phase == phaseDraft {
+		maxTokens = config.DraftMaxTokens
+	}
+
 	req := &loop.Request{
-		Model:    modelName,
-		Messages: m.messages,
-		Stream:   true,
+		Model:     modelName,
+		Messages:  m.messages,
+		Stream:    true,
+		MaxTokens: maxTokens,
 	}
 
 	if len(m.tools) > 0 {

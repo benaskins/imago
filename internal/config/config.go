@@ -9,6 +9,14 @@ const (
 	// DraftModel is the LLM used during the draft phase.
 	// Stronger synthesis and writing, slower is acceptable.
 	DraftModel = "qwen3:235b"
+
+	// InterviewMaxTokens is the context budget for the interview phase.
+	// qwen3:30b supports 32k context; leave headroom for response.
+	InterviewMaxTokens = 28000
+
+	// DraftMaxTokens is the context budget for the draft phase.
+	// Larger to accommodate the full interview transcript.
+	DraftMaxTokens = 28000
 )
 
 // SystemPrompt is the interview phase system prompt.
