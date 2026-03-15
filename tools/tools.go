@@ -48,6 +48,7 @@ func All(cfg Config) map[string]tool.ToolDef {
 		SubmitDraft(cfg.SyndURL, cfg.SyndToken),
 		Recall(cfg.MemoURL),
 		Claude(),
+		ListDir(),
 	} {
 		m[td.Name] = td
 	}
@@ -83,6 +84,46 @@ func ReadFile() tool.ToolDef {
 				return tool.ToolResult{Content: fmt.Sprintf("Error reading file: %v", err)}
 			}
 			return tool.ToolResult{Content: string(data)}
+		},
+	}
+}
+
+// ListDir returns a tool that lists the contents of a directory.
+func ListDir() tool.ToolDef {
+	return tool.ToolDef{
+		Name:        "list_dir",
+		Description: "List the contents of a directory. Returns file and directory names with type indicators.",
+		Parameters: tool.ParameterSchema{
+			Type:     "object",
+			Required: []string{"path"},
+			Properties: map[string]tool.PropertySchema{
+				"path": {
+					Type:        "string",
+					Description: "Absolute path to the directory to list.",
+				},
+			},
+		},
+		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
+			path, _ := args["path"].(string)
+			if path == "" {
+				return tool.ToolResult{Content: "Error: path is required."}
+			}
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return tool.ToolResult{Content: fmt.Sprintf("Error reading directory: %v", err)}
+			}
+			var sb strings.Builder
+			for _, e := range entries {
+				if e.IsDir() {
+					sb.WriteString(e.Name() + "/\n")
+				} else {
+					sb.WriteString(e.Name() + "\n")
+				}
+			}
+			if sb.Len() == 0 {
+				return tool.ToolResult{Content: "(empty directory)"}
+			}
+			return tool.ToolResult{Content: sb.String()}
 		},
 	}
 }

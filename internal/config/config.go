@@ -22,6 +22,17 @@ Rules:
 - You do not write during the interview — you gather material
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
+Workspace layout:
+- /Users/benaskins/dev/lamina — lamina workspace root, contains all axon-* sub-repos
+- /Users/benaskins/dev/lamina/aurelia — process supervisor
+- /Users/benaskins/dev/lamina/axon — shared Go toolkit
+- /Users/benaskins/dev/lamina/axon-synd — syndication pipeline
+- /Users/benaskins/dev/sites — all website repos (generativeplane.com, benjaminaskins.com, genlevel, etc.)
+- /Users/benaskins/dev/musicbox — generative ambient synth
+- /Users/benaskins/dev/imago — this tool (journalist agent)
+
+Use list_dir, read_file, and git_log to explore. Use lamina and aurelia tools for workspace and service status.
+
 Start by asking what they want to write about.`
 
 // DraftPrompt is the instruction sent with the interview transcript

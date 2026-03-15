@@ -252,6 +252,7 @@ func TestAll(t *testing.T) {
 		"submit_draft",
 		"recall",
 		"claude",
+		"list_dir",
 	}
 
 	for _, name := range expected {
