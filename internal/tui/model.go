@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -157,6 +158,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Add user message
+			slog.Info("user message", "phase", "interview", "length", len(text))
 			m.entries = append(m.entries, chatEntry{role: "user", content: text})
 			m.messages = append(m.messages, loop.Message{Role: "user", Content: text})
 			m.waiting = true
@@ -197,6 +199,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if ev.tool != nil {
+			slog.Info("tool use", "tool", ev.tool.name, "args", ev.tool.args)
 			label := fmt.Sprintf("\u21b3 %s", ev.tool.name)
 			if len(ev.tool.args) > 0 {
 				var parts []string
@@ -215,6 +218,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				content = m.streaming
 			}
 			if content != "" {
+				slog.Info("agent response", "phase", "interview", "length", len(content))
 				m.entries = append(m.entries, chatEntry{role: "agent", content: content})
 				m.messages = append(m.messages, loop.Message{Role: "assistant", Content: content})
 			}
@@ -230,6 +234,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(msg.ch)
 
 	case phaseSwitchMsg:
+		slog.Info("phase transition", "from", "interview", "to", "draft", "turns", len(m.entries))
 		return m.transitionToDraft()
 	}
 

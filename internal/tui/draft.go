@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -79,6 +80,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Handle section approval or revision
 			if text == "k" || text == "keep" {
+				slog.Info("section approved", "section", m.sectionIndex+1, "total", len(m.sections))
 				m.approved[m.sectionIndex] = true
 				m.sectionIndex++
 
@@ -95,6 +97,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Revision directive — send to LLM
+			slog.Info("section revision", "section", m.sectionIndex+1, "directive", text)
 			m.waiting = true
 			return m, m.reviseSection(text)
 		}

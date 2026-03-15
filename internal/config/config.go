@@ -4,7 +4,7 @@ package config
 const (
 	// InterviewModel is the LLM used during the interview phase.
 	// Fast responses to keep conversational momentum.
-	InterviewModel = "qwen3:32b"
+	InterviewModel = "qwen3:30b"
 
 	// DraftModel is the LLM used during the draft phase.
 	// Stronger synthesis and writing, slower is acceptable.

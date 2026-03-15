@@ -9,11 +9,19 @@ import (
 
 	"github.com/benaskins/axon-talk/ollama"
 
+	"github.com/benaskins/imago/internal/logging"
 	"github.com/benaskins/imago/internal/tui"
 	"github.com/benaskins/imago/tools"
 )
 
 func main() {
+	cleanup, err := logging.Setup()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: logging setup failed: %v\n", err)
+	} else {
+		defer cleanup()
+	}
+
 	client, err := ollama.NewClientFromEnvironment()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to connect to ollama: %v\n", err)
