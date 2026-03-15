@@ -1,0 +1,11 @@
+# Binary
+imago
+bin/
+
+# Claude Code
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
