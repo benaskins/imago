@@ -1,9 +1,9 @@
 module github.com/benaskins/imago
 
-go 1.26.0
+go 1.26.1
 
 require (
-	github.com/benaskins/axon-loop v0.3.3
+	github.com/benaskins/axon-loop v0.4.0
 	github.com/benaskins/axon-talk v0.2.3
 	github.com/benaskins/axon-tool v0.1.3
 	github.com/charmbracelet/bubbles v1.0.0

@@ -44,7 +44,7 @@ type streamEvent struct {
 // streamTickMsg wraps a stream event for the Bubble Tea update loop.
 type streamTickMsg struct {
 	event streamEvent
-	ch    <-chan streamEvent
+	ch    <-chan loop.Event
 }
 
 // Model is the top-level Bubble Tea model for imago.
@@ -207,7 +207,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.entries = append(m.entries, chatEntry{role: "tool", content: label, collapsed: true})
 			m.refreshViewport()
-			return m, waitForStream(msg.ch)
+			return m, waitForEvent(msg.ch)
 		}
 		if ev.done {
 			content := ev.content
@@ -227,7 +227,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streaming += ev.token
 			m.refreshViewport()
 		}
-		return m, waitForStream(msg.ch)
+		return m, waitForEvent(msg.ch)
 
 	case phaseSwitchMsg:
 		return m.transitionToDraft()
@@ -317,46 +317,23 @@ func (m Model) viewInterview() string {
 	)
 }
 
-// startLLM launches the LLM in a goroutine and returns a command that
-// reads stream events from a channel.
-func (m Model) startLLM(model string) tea.Cmd {
-	ch := make(chan streamEvent, 64)
+// startLLM launches the LLM via loop.Stream and returns a command that
+// reads events from the channel.
+func (m Model) startLLM(modelName string) tea.Cmd {
+	req := &loop.Request{
+		Model:    modelName,
+		Messages: m.messages,
+		Stream:   true,
+	}
 
-	go func() {
-		defer close(ch)
-		ctx := context.Background()
-
-		req := &loop.Request{
-			Model:    model,
-			Messages: m.messages,
-			Stream:   true,
+	if len(m.tools) > 0 {
+		for _, td := range m.tools {
+			req.Tools = append(req.Tools, td)
 		}
+	}
 
-		if len(m.tools) > 0 {
-			for _, td := range m.tools {
-				req.Tools = append(req.Tools, td)
-			}
-		}
-
-		cb := loop.Callbacks{
-			OnToken: func(token string) {
-				ch <- streamEvent{token: token}
-			},
-			OnToolUse: func(name string, args map[string]any) {
-				ch <- streamEvent{tool: &toolUseMsg{name: name, args: args}}
-			},
-		}
-
-		result, err := loop.Run(ctx, m.client, req, m.tools, nil, cb)
-		if err != nil {
-			ch <- streamEvent{err: err}
-			return
-		}
-
-		ch <- streamEvent{done: true, content: result.Content}
-	}()
-
-	return waitForStream(ch)
+	ch := loop.Stream(context.Background(), m.client, req, m.tools, nil)
+	return waitForEvent(ch)
 }
 
 // wordWrap wraps text at the given width on word boundaries.
@@ -391,13 +368,26 @@ func wordWrap(s string, width int) string {
 	return sb.String()
 }
 
-// waitForStream reads the next event from the stream channel.
-func waitForStream(ch <-chan streamEvent) tea.Cmd {
+// waitForEvent reads the next loop.Event from the stream channel and
+// converts it to a streamTickMsg for Bubble Tea's update loop.
+func waitForEvent(ch <-chan loop.Event) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		if !ok {
 			return streamTickMsg{event: streamEvent{done: true}}
 		}
-		return streamTickMsg{event: ev, ch: ch}
+		se := streamEvent{}
+		switch {
+		case ev.Err != nil:
+			se.err = ev.Err
+		case ev.ToolUse != nil:
+			se.tool = &toolUseMsg{name: ev.ToolUse.Name, args: ev.ToolUse.Args}
+		case ev.Done != nil:
+			se.done = true
+			se.content = ev.Done.Content
+		case ev.Token != "":
+			se.token = ev.Token
+		}
+		return streamTickMsg{event: se, ch: ch}
 	}
 }

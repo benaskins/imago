@@ -37,35 +37,14 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 
 	m.messages = draftMessages
 
-	ch := make(chan streamEvent, 64)
-	go func() {
-		defer close(ch)
-		ctx := context.Background()
+	req := &loop.Request{
+		Model:    config.DraftModel,
+		Messages: draftMessages,
+		Stream:   true,
+	}
 
-		req := &loop.Request{
-			Model:    config.DraftModel,
-			Messages: draftMessages,
-			Stream:   true,
-		}
-
-		var full strings.Builder
-		cb := loop.Callbacks{
-			OnToken: func(token string) {
-				full.WriteString(token)
-				ch <- streamEvent{token: token}
-			},
-		}
-
-		_, err := loop.Run(ctx, m.client, req, nil, nil, cb)
-		if err != nil {
-			ch <- streamEvent{err: err}
-			return
-		}
-
-		ch <- streamEvent{done: true, content: full.String()}
-	}()
-
-	return m, waitForStream(ch)
+	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
+	return m, waitForEvent(ch)
 }
 
 func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -159,7 +138,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.streaming += ev.token
 			m.refreshDraftViewport()
 		}
-		return m, waitForStream(msg.ch)
+		return m, waitForEvent(msg.ch)
 
 	case sectionReviseMsg:
 		m.sections[m.sectionIndex] = msg.content
