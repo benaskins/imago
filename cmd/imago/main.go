@@ -1,0 +1,58 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/benaskins/axon-talk/ollama"
+
+	"github.com/benaskins/imago/internal/tui"
+	"github.com/benaskins/imago/tools"
+)
+
+func main() {
+	client, err := ollama.NewClientFromEnvironment()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to connect to ollama: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Load tool config from environment
+	syndToken := ""
+	if data, err := os.ReadFile(os.ExpandEnv("$HOME/.config/synd/token")); err == nil {
+		syndToken = strings.TrimSpace(string(data))
+	}
+
+	cfg := tools.Config{
+		SiteDir:    envOrDefault("SYND_SITE_DIR", "/Users/benaskins/dev/sites/generativeplane.com"),
+		SyndURL:    envOrDefault("SYND_SERVICE_URL", ""),
+		SyndToken:  syndToken,
+		MemoURL:    envOrDefault("MEMO_SERVICE_URL", ""),
+		SearXNGURL: envOrDefault("SEARXNG_URL", ""),
+	}
+
+	allTools := tools.All(cfg)
+
+	model := tui.New(client, allTools)
+
+	p := tea.NewProgram(
+		model,
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
+
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

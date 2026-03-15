@@ -1,6 +1,6 @@
 # Binary
-imago
-bin/
+/imago
+/bin/
 
 # Claude Code
 .claude/
