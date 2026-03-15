@@ -275,12 +275,13 @@ func (m *Model) refreshDraftViewport() {
 }
 
 func (m Model) viewDraft() string {
-	status := statusStyle.Render("k/keep to approve | type directive to revise | ctrl+c quit")
+	model := modelStyle.Render(m.currentModel())
+	status := statusStyle.Render("k/keep to approve | type directive to revise | ctrl+c quit") + "  " + model
 	if m.waiting {
-		status = statusStyle.Render("generating...")
+		status = statusStyle.Render("generating...") + "  " + model
 	}
 	if m.finalConfirm {
-		status = statusStyle.Render("y to publish | n to go back")
+		status = statusStyle.Render("y to publish | n to go back") + "  " + model
 	}
 
 	return lipgloss.JoinVertical(

@@ -251,15 +251,20 @@ func (m *Model) refreshViewport() {
 		w = 80
 	}
 
+	contentWidth := w - 2
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
+
 	for _, e := range m.entries {
 		switch e.role {
 		case "user":
 			sb.WriteString(userStyle.Render("you") + " ")
-			sb.WriteString(e.content)
+			sb.WriteString(wordWrap(e.content, contentWidth-5))
 			sb.WriteString("\n\n")
 		case "agent":
 			sb.WriteString(agentLabelStyle.Render("imago") + " ")
-			sb.WriteString(agentStyle.Render(e.content))
+			sb.WriteString(agentStyle.Width(contentWidth-7).Render(e.content))
 			sb.WriteString("\n\n")
 		case "tool":
 			sb.WriteString(toolStyle.Render(e.content))
@@ -270,7 +275,7 @@ func (m *Model) refreshViewport() {
 	// Show streaming content
 	if m.streaming != "" {
 		sb.WriteString(agentLabelStyle.Render("imago") + " ")
-		sb.WriteString(agentStyle.Render(m.streaming))
+		sb.WriteString(agentStyle.Width(contentWidth-7).Render(m.streaming))
 		sb.WriteString("\u2588") // block cursor
 		sb.WriteString("\n")
 	}
@@ -288,10 +293,20 @@ func (m *Model) toggleLastToolEntry() {
 	}
 }
 
+func (m Model) currentModel() string {
+	switch m.phase {
+	case phaseDraft:
+		return config.DraftModel
+	default:
+		return config.InterviewModel
+	}
+}
+
 func (m Model) viewInterview() string {
-	status := statusStyle.Render("ctrl+c quit | /draft to start drafting")
+	model := modelStyle.Render(m.currentModel())
+	status := statusStyle.Render("ctrl+c quit | /draft to start drafting") + "  " + model
 	if m.waiting {
-		status = statusStyle.Render("thinking...")
+		status = statusStyle.Render("thinking...") + "  " + model
 	}
 
 	return lipgloss.JoinVertical(
@@ -342,6 +357,38 @@ func (m Model) startLLM(model string) tea.Cmd {
 	}()
 
 	return waitForStream(ch)
+}
+
+// wordWrap wraps text at the given width on word boundaries.
+func wordWrap(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	var sb strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if len(line) <= width {
+			if sb.Len() > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(line)
+			continue
+		}
+		words := strings.Fields(line)
+		col := 0
+		for i, w := range words {
+			if i > 0 && col+1+len(w) > width {
+				sb.WriteString("\n")
+				col = 0
+			} else if i > 0 {
+				sb.WriteString(" ")
+				col++
+			}
+			sb.WriteString(w)
+			col += len(w)
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // waitForStream reads the next event from the stream channel.

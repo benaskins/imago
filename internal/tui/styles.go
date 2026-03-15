@@ -45,4 +45,8 @@ var (
 			Foreground(lipgloss.Color("5")).
 			Bold(true).
 			MarginBottom(1)
+
+	modelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Italic(true)
 )
