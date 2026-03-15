@@ -68,7 +68,10 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if m.finalConfirm {
 				if text == "y" || text == "yes" {
-					// Print final markdown to stdout and quit
+					// Mark session complete and print final markdown
+					if m.session != nil {
+						m.session.MarkComplete()
+					}
 					fmt.Print(m.finalMarkdown)
 					return m, tea.Quit
 				}
@@ -83,6 +86,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				slog.Info("section approved", "section", m.sectionIndex+1, "total", len(m.sections))
 				m.approved[m.sectionIndex] = true
 				m.sectionIndex++
+				m.saveSession()
 
 				// Check if all sections approved
 				if m.sectionIndex >= len(m.sections) {
@@ -131,6 +135,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ev.done {
 			if ev.content != "" {
 				m.parseSections(ev.content)
+				m.saveSession()
 			}
 			m.streaming = ""
 			m.waiting = false
@@ -147,6 +152,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sections[m.sectionIndex] = msg.content
 		m.rendered[m.sectionIndex] = renderMarkdown(msg.content, m.width)
 		m.waiting = false
+		m.saveSession()
 		m.refreshDraftViewport()
 		return m, nil
 	}

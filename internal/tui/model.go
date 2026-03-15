@@ -16,6 +16,7 @@ import (
 	tool "github.com/benaskins/axon-tool"
 
 	"github.com/benaskins/imago/internal/config"
+	"github.com/benaskins/imago/internal/session"
 )
 
 // phase represents the current application phase.
@@ -78,10 +79,13 @@ type Model struct {
 	draftFinished bool     // all sections approved
 	finalConfirm  bool     // waiting for final confirmation
 	finalMarkdown string   // the complete markdown output
+
+	// Session persistence
+	session *session.State
 }
 
 // New creates a new Model with the given LLM client and tools.
-func New(client loop.LLMClient, tools map[string]tool.ToolDef) Model {
+func New(client loop.LLMClient, tools map[string]tool.ToolDef, sess *session.State) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type your response..."
 	ta.Focus()
@@ -90,15 +94,54 @@ func New(client loop.LLMClient, tools map[string]tool.ToolDef) Model {
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
-	return Model{
-		phase:  phaseInterview,
-		client: client,
-		tools:  tools,
-		input:  ta,
+	m := Model{
+		phase:   phaseInterview,
+		client:  client,
+		tools:   tools,
+		input:   ta,
+		session: sess,
 		messages: []loop.Message{
 			{Role: "system", Content: config.SystemPrompt},
 		},
 	}
+
+	// Restore from session if resuming
+	if sess != nil && len(sess.Messages) > 0 {
+		m.messages = sess.Messages
+
+		// Rebuild entries from messages for display
+		for _, msg := range sess.Messages {
+			switch msg.Role {
+			case "user":
+				m.entries = append(m.entries, chatEntry{role: "user", content: msg.Content})
+			case "assistant":
+				m.entries = append(m.entries, chatEntry{role: "agent", content: msg.Content})
+			}
+		}
+
+		if sess.Phase == "draft" && len(sess.Sections) > 0 {
+			m.phase = phaseDraft
+			m.sections = sess.Sections
+			m.approved = sess.Approved
+			m.rendered = make([]string, len(sess.Sections))
+			for i, s := range sess.Sections {
+				m.rendered[i] = renderMarkdown(s, 80)
+			}
+			// Find first unapproved section
+			m.sectionIndex = len(sess.Sections)
+			for i, a := range sess.Approved {
+				if !a {
+					m.sectionIndex = i
+					break
+				}
+			}
+			ta.Placeholder = "k/keep to approve, or type revision directive..."
+		}
+
+		slog.Info("session resumed", "id", sess.ID, "phase", sess.Phase, "messages", len(sess.Messages))
+	}
+
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -163,6 +206,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, loop.Message{Role: "user", Content: text})
 			m.waiting = true
 			m.streaming = ""
+			m.saveSession()
 			m.refreshViewport()
 
 			return m, m.startLLM(config.InterviewModel)
@@ -221,6 +265,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				slog.Info("agent response", "phase", "interview", "length", len(content))
 				m.entries = append(m.entries, chatEntry{role: "agent", content: content})
 				m.messages = append(m.messages, loop.Message{Role: "assistant", Content: content})
+				m.saveSession()
 			}
 			m.streaming = ""
 			m.waiting = false
@@ -247,6 +292,21 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) saveSession() {
+	if m.session == nil {
+		m.session = session.New()
+	}
+	m.session.Messages = m.messages
+	if m.phase == phaseDraft {
+		m.session.Phase = "draft"
+		m.session.Sections = m.sections
+		m.session.Approved = m.approved
+	}
+	if err := m.session.Save(); err != nil {
+		slog.Error("failed to save session", "error", err)
+	}
 }
 
 func (m *Model) refreshViewport() {

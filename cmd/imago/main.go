@@ -10,6 +10,7 @@ import (
 	"github.com/benaskins/axon-talk/ollama"
 
 	"github.com/benaskins/imago/internal/logging"
+	"github.com/benaskins/imago/internal/session"
 	"github.com/benaskins/imago/internal/tui"
 	"github.com/benaskins/imago/tools"
 )
@@ -44,7 +45,18 @@ func main() {
 
 	allTools := tools.All(cfg)
 
-	model := tui.New(client, allTools)
+	// Check for incomplete session
+	var sess *session.State
+	if prev := session.FindIncomplete(); prev != nil {
+		fmt.Printf("Found incomplete session from %s. Resume? (y/n) ", prev.UpdatedAt.Format("Jan 2 15:04"))
+		var answer string
+		fmt.Scanln(&answer)
+		if answer == "y" || answer == "yes" {
+			sess = prev
+		}
+	}
+
+	model := tui.New(client, allTools, sess)
 
 	p := tea.NewProgram(
 		model,
