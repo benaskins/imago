@@ -1,6 +1,21 @@
 // Package config provides configuration for the imago application.
 package config
 
+import (
+	"fmt"
+	"os"
+)
+
+// SystemPrompt returns the interview phase system prompt with the
+// workspace root resolved from $DEV.
+func SystemPrompt() string {
+	dev := os.Getenv("DEV")
+	if dev == "" {
+		return fmt.Sprintf(SystemPromptTemplate, "(workspace not configured — set $DEV)")
+	}
+	return fmt.Sprintf(SystemPromptTemplate, dev)
+}
+
 const (
 	// InterviewModel is the LLM used during the interview phase.
 	InterviewModel = "qwen3:32b"
@@ -24,8 +39,9 @@ const (
 	DraftNumCtx = 16384
 )
 
-// SystemPrompt is the interview phase system prompt.
-const SystemPrompt = `You are a journalist interviewing someone to produce a blog post. Start by asking what they want to write about, then follow the thread.
+// SystemPromptTemplate is the interview phase system prompt.
+// %s placeholder: workspace root directory ($DEV).
+const SystemPromptTemplate = `You are a journalist interviewing someone to produce a blog post. Start by asking what they want to write about, then follow the thread.
 
 Rules:
 - Ask one question at a time
@@ -36,9 +52,11 @@ Rules:
 - You do not write during the interview — you gather material
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
-You can explore the local filesystem and services if needed:
-- /Users/benaskins/dev — project root (lamina, axon-*, sites, musicbox, imago)
-- Use list_dir, read_file, git_log for code. Use lamina, aurelia_status, aurelia_show for services.`
+You have tools to explore the workspace at %s:
+- Use list_dir to discover projects, read_file to read source, git_log for history
+- Use lamina for workspace status and dependency info
+- Use aurelia_status and aurelia_show for running services
+- Use search for web research, fetch_page to read URLs`
 
 // DraftPrompt is the instruction sent with the interview transcript
 // when transitioning to the draft phase.

@@ -109,7 +109,7 @@ func New(client loop.LLMClient, tools map[string]tool.ToolDef, sess *session.Sta
 		input:   ta,
 		session: sess,
 		messages: []loop.Message{
-			{Role: "system", Content: config.SystemPrompt},
+			{Role: "system", Content: config.SystemPrompt()},
 		},
 	}
 

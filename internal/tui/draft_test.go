@@ -35,7 +35,7 @@ func TestAssembleDraft(t *testing.T) {
 func TestInterviewTranscript(t *testing.T) {
 	m := Model{
 		messages: []loop.Message{
-			{Role: "system", Content: config.SystemPrompt},
+			{Role: "system", Content: config.SystemPrompt()},
 			{Role: "assistant", Content: "What do you want to write about?"},
 			{Role: "user", Content: "Building local AI tools."},
 			{Role: "assistant", Content: "Tell me more."},
@@ -46,8 +46,8 @@ func TestInterviewTranscript(t *testing.T) {
 
 	transcript := m.interviewTranscript()
 
-	if strings.Contains(transcript, config.SystemPrompt) {
-		t.Error("transcript should not contain system prompt")
+	if strings.Contains(transcript, "journalist") {
+		t.Error("transcript should not contain system prompt content")
 	}
 	if strings.Contains(transcript, config.DraftPrompt) {
 		t.Error("transcript should not contain draft prompt")
