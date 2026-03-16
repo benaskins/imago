@@ -69,7 +69,8 @@ Tools:
 - repo_overview gives tree + commits + key docs for a repo in one call
 - read_files reads up to 5 files at once — use it after discovering paths
 - aurelia_status and lamina for infrastructure context
-- search and fetch_page for web research`
+- search and fetch_page for web research
+- research fetches multiple URLs in parallel — use it instead of repeated fetch_page calls when you have several URLs to read`
 
 // DraftPrompt is the instruction sent with the interview transcript
 // when transitioning to the draft phase.
