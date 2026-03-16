@@ -73,3 +73,20 @@ Rules:
 - When you revise, respond with the complete updated section in markdown (no commentary, no explanation, just the section)
 - If the author asks a question or wants to discuss rather than revise, respond conversationally — don't output a revised section unless asked
 - Keep the voice consistent with the rest of the draft`
+
+// ReviewPromptTemplate is the system prompt for final full-article review.
+// %s placeholders: interview transcript, full article.
+const ReviewPromptTemplate = `You are doing a final review of a complete blog post. The author has approved each section individually and now wants to review the piece as a whole.
+
+## Interview transcript
+%s
+
+## Complete article
+%s
+
+Rules:
+- Check for continuity between sections — do transitions read naturally?
+- Flag any claims that don't match the interview transcript
+- When asked to revise, output the complete updated article in markdown
+- If the author wants to discuss rather than revise, respond conversationally
+- Keep the established voice consistent throughout`

@@ -25,6 +25,7 @@ type phase int
 const (
 	phaseInterview phase = iota
 	phaseDraft
+	phaseReview
 )
 
 // chatEntry is a single item in the conversation view.
@@ -77,12 +78,15 @@ type Model struct {
 	sectionIndex    int                // current section being reviewed
 	approved        []bool             // which sections are approved
 	draftFinished   bool               // all sections approved
-	finalConfirm    bool               // waiting for final confirmation
 	finalMarkdown   string             // the complete markdown output
 	draftError      string             // error message to display in draft phase
 	fullDraft       string             // complete draft text for context
 	sectionHistory  [][]loop.Message   // per-section conversation history
 	revisionEntries [][]chatEntry      // per-section chat entries for display
+
+	// Review state (final full-article review)
+	reviewHistory []loop.Message // conversation about the full article
+	reviewEntries []chatEntry    // display entries for review conversation
 
 	// Session persistence
 	session *session.State
@@ -161,6 +165,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateInterview(msg)
 	case phaseDraft:
 		return m.updateDraft(msg)
+	case phaseReview:
+		return m.updateReview(msg)
 	}
 	return m, nil
 }
@@ -175,6 +181,8 @@ func (m Model) View() string {
 		return m.viewInterview()
 	case phaseDraft:
 		return m.viewDraft()
+	case phaseReview:
+		return m.viewReview()
 	}
 	return ""
 }
@@ -364,7 +372,7 @@ func (m *Model) toggleLastToolEntry() {
 
 func (m Model) currentModel() string {
 	switch m.phase {
-	case phaseDraft:
+	case phaseDraft, phaseReview:
 		return config.DraftModel
 	default:
 		return config.InterviewModel

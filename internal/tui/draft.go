@@ -71,21 +71,6 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.input.Reset()
 
-			if m.finalConfirm {
-				if text == "y" || text == "yes" {
-					// Mark session complete and print final markdown
-					if m.session != nil {
-						m.session.MarkComplete()
-					}
-					fmt.Print(m.finalMarkdown)
-					return m, tea.Quit
-				}
-				// Not confirmed — go back to first unapproved section
-				m.finalConfirm = false
-				m.refreshDraftViewport()
-				return m, nil
-			}
-
 			// Guard: no sections to work with
 			if len(m.sections) == 0 {
 				slog.Info("retrying draft generation")
@@ -99,12 +84,9 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sectionIndex++
 				m.saveSession()
 
-				// Check if all sections approved
+				// Check if all sections approved — transition to final review
 				if m.sectionIndex >= len(m.sections) {
-					m.finalConfirm = true
-					m.finalMarkdown = assembleDraft(m.sections)
-					m.refreshDraftViewport()
-					return m, nil
+					return m.transitionToReview()
 				}
 
 				m.refreshDraftViewport()
@@ -357,20 +339,6 @@ func (m *Model) refreshDraftViewport() {
 		return
 	}
 
-	if m.finalConfirm {
-		sb.WriteString(headerStyle.Render("Draft complete"))
-		sb.WriteString("\n\n")
-
-		rendered := renderMarkdown(m.finalMarkdown, w)
-		sb.WriteString(rendered)
-		sb.WriteString("\n\n")
-		sb.WriteString(approvedStyle.Render("All sections approved. Publish? (y/n)"))
-
-		m.viewport.SetContent(sb.String())
-		m.viewport.GotoBottom()
-		return
-	}
-
 	if len(m.sections) == 0 {
 		sb.WriteString(headerStyle.Render("No draft content"))
 		sb.WriteString("\n\n")
@@ -451,9 +419,6 @@ func (m Model) viewDraft() string {
 	status := statusStyle.Render("k/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
 	if m.waiting {
 		status = statusStyle.Render("generating...") + "  " + model
-	}
-	if m.finalConfirm {
-		status = statusStyle.Render("y to publish | n to go back") + "  " + model
 	}
 
 	return lipgloss.JoinVertical(
