@@ -36,7 +36,7 @@ func main() {
 	}
 
 	cfg := tools.Config{
-		SiteDir:    envOrDefault("SYND_SITE_DIR", "/Users/benaskins/dev/sites/generativeplane.com"),
+		SiteDir:    envOrDefault("SYND_SITE_DIR", ""),
 		SyndURL:    envOrDefault("SYND_SERVICE_URL", ""),
 		SyndToken:  syndToken,
 		MemoURL:    envOrDefault("MEMO_SERVICE_URL", ""),
