@@ -267,7 +267,7 @@ func (m Model) reviseSection() tea.Cmd {
 		Model:    config.DraftModel,
 		Messages: messages,
 		Stream:   true,
-		Options:  map[string]any{"num_ctx": config.DraftNumCtx},
+		Options:  map[string]any{"num_ctx": config.DraftNumCtx, "num_predict": config.RevisionNumPredict},
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)

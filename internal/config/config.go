@@ -41,6 +41,11 @@ const (
 	// InterviewNumPredict caps total output (thinking + content) per turn.
 	// Keeps thinking brief while leaving room for the response.
 	InterviewNumPredict = 2048
+
+	// RevisionNumPredict caps total output for section revision.
+	// Higher than interview — revisions output a full section — but
+	// still capped to keep the editing loop snappy.
+	RevisionNumPredict = 4096
 )
 
 // SystemPromptTemplate is the interview phase system prompt.
