@@ -26,7 +26,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 
 	// Reset input for draft controls
 	m.input.Reset()
-	m.input.Placeholder = "k/keep to approve, or type feedback..."
+	m.input.Placeholder = "/keep to approve, or type feedback..."
 	m.input.Focus()
 
 	slog.Info("draft generation starting", "model", config.DraftModel, "num_ctx", config.DraftNumCtx, "messages", len(m.messages))
@@ -78,7 +78,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Handle section approval
-			if text == "k" || text == "keep" {
+			if text == "k" || text == "keep" || text == "/keep" || text == "/k" {
 				slog.Info("section approved", "section", m.sectionIndex+1, "total", len(m.sections))
 				m.approved[m.sectionIndex] = true
 				m.sectionIndex++
@@ -416,7 +416,7 @@ func revisionPreview(content string) string {
 
 func (m Model) viewDraft() string {
 	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("k/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
+	status := statusStyle.Render("/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
 	if m.waiting {
 		status = statusStyle.Render("generating...") + "  " + model
 	}
