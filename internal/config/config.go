@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 // SystemPrompt returns the interview phase system prompt with the
@@ -11,9 +12,10 @@ import (
 func SystemPrompt() string {
 	dev := os.Getenv("DEV")
 	if dev == "" {
-		return fmt.Sprintf(SystemPromptTemplate, "(workspace not configured — set $DEV)")
+		dev = "(workspace not configured — set $DEV)"
 	}
-	return fmt.Sprintf(SystemPromptTemplate, dev)
+	date := time.Now().Format("2 January 2006")
+	return fmt.Sprintf(SystemPromptTemplate, date, dev)
 }
 
 const (
@@ -52,6 +54,8 @@ const (
 // %s placeholder: workspace root directory ($DEV).
 const SystemPromptTemplate = `You are a journalist interviewing someone to produce a blog post. Start by asking what they want to write about, then follow the thread.
 
+Today's date is %s.
+
 Rules:
 - Ask one question at a time
 - Follow interesting threads — when an answer opens something up, go deeper
@@ -64,10 +68,11 @@ Rules:
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
 Tools:
-- The workspace is at %s
+- The local workspace is at %s — only repos cloned here are available locally
+- For external repos not in the workspace, use repo_overview with the GitHub identifier (e.g. microsoft/autogen) — it fetches via the GitHub API
 - NEVER guess file paths — always use list_dir or repo_overview first to discover what exists
-- repo_overview gives tree + commits + key docs for a repo in one call
-- read_files reads up to 5 files at once — use it after discovering paths
+- repo_overview gives tree + commits + key docs for a repo in one call — works with local paths and GitHub repos
+- read_files reads up to 5 files at once — use it after discovering paths (local repos only)
 - aurelia_status and lamina for infrastructure context
 - search and fetch_page for web research
 - research fetches multiple URLs in parallel — use it instead of repeated fetch_page calls when you have several URLs to read`
