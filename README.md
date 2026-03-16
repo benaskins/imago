@@ -10,6 +10,8 @@ A terminal app that interviews you and writes a blog post. Two phases: interview
 4. **Final review** — all sections assembled, one last pass over the whole piece.
 5. **Save** — `/done` writes the markdown to `~/Documents/imago/`.
 
+See [a real session](docs/example-session.md) that produced the first imago blog post in 26 minutes.
+
 ## Requirements
 
 - [Ollama](https://ollama.com) with `qwen3:32b` (or configure a different model)
