@@ -5,6 +5,7 @@ package tools
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,65 +79,156 @@ func All(cfg Config) map[string]tool.ToolDef {
 
 // RepoOverview returns a tool that gives a full overview of a repository
 // in a single call: directory tree, recent commits, and key docs.
+// Supports both local paths and GitHub repos (owner/repo or https://github.com/...).
 func RepoOverview() tool.ToolDef {
 	return tool.ToolDef{
 		Name:        "repo_overview",
-		Description: "Get a full overview of a repository in one call. Returns directory tree (2 levels deep), last 10 commits, and contents of key docs (README.md, CLAUDE.md, AGENTS.md). Use this instead of multiple list_dir/read_file/git_log calls when exploring a new repo.",
+		Description: "Get a full overview of a repository in one call. Returns directory tree (2 levels deep), last 10 commits, and contents of key docs (README.md, CLAUDE.md, AGENTS.md). Works with local paths (/Users/.../repo) or GitHub repos (owner/repo or https://github.com/owner/repo).",
 		Parameters: tool.ParameterSchema{
 			Type:     "object",
-			Required: []string{"dir"},
+			Required: []string{"repo"},
 			Properties: map[string]tool.PropertySchema{
-				"dir": {
+				"repo": {
 					Type:        "string",
-					Description: "Path to the repository root directory.",
+					Description: "Local path to the repository, or a GitHub repo identifier (owner/repo or https://github.com/owner/repo).",
 				},
 			},
 		},
 		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			dir, _ := args["dir"].(string)
-			if dir == "" {
-				return tool.ToolResult{Content: "Error: dir is required."}
+			repo, _ := args["repo"].(string)
+			if repo == "" {
+				// Fall back to "dir" for backward compatibility.
+				repo, _ = args["dir"].(string)
+			}
+			if repo == "" {
+				return tool.ToolResult{Content: "Error: repo is required."}
 			}
 
-			var sb strings.Builder
-
-			// Directory tree (2 levels)
-			sb.WriteString("## Directory tree\n\n")
-			if tree, err := dirTree(dir, 2, ""); err == nil {
-				sb.WriteString(tree)
-			} else {
-				sb.WriteString(fmt.Sprintf("Error: %v\n", err))
+			if isGitHubRepo(repo) {
+				return repoOverviewRemote(ctx, normalizeGitHubRepo(repo))
 			}
-
-			// Recent commits
-			sb.WriteString("\n## Recent commits\n\n")
-			cmd := exec.CommandContext(ctx.Ctx, "git", "log", "--oneline", "-10")
-			cmd.Dir = dir
-			if out, err := cmd.CombinedOutput(); err == nil {
-				sb.WriteString(string(out))
-			} else {
-				sb.WriteString("(not a git repository or git error)\n")
-			}
-
-			// Key documentation files
-			keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
-			for _, name := range keyDocs {
-				path := filepath.Join(dir, name)
-				if data, err := os.ReadFile(path); err == nil {
-					sb.WriteString(fmt.Sprintf("\n## %s\n\n", name))
-					content := string(data)
-					// Truncate very long docs
-					if len(content) > 3000 {
-						content = content[:3000] + "\n\n... (truncated)"
-					}
-					sb.WriteString(content)
-					sb.WriteString("\n")
-				}
-			}
-
-			return tool.ToolResult{Content: sb.String()}
+			return repoOverviewLocal(ctx, repo)
 		},
 	}
+}
+
+func isGitHubRepo(s string) bool {
+	if strings.HasPrefix(s, "https://github.com/") || strings.HasPrefix(s, "http://github.com/") {
+		return true
+	}
+	// owner/repo pattern: contains exactly one slash, no spaces, no path separators at start
+	if !strings.HasPrefix(s, "/") && !strings.HasPrefix(s, ".") && strings.Count(s, "/") == 1 {
+		parts := strings.Split(s, "/")
+		return len(parts[0]) > 0 && len(parts[1]) > 0
+	}
+	return false
+}
+
+func normalizeGitHubRepo(s string) string {
+	s = strings.TrimPrefix(s, "https://github.com/")
+	s = strings.TrimPrefix(s, "http://github.com/")
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.TrimRight(s, "/")
+	// Strip anything after owner/repo (e.g. /tree/main/...)
+	parts := strings.Split(s, "/")
+	if len(parts) >= 2 {
+		return parts[0] + "/" + parts[1]
+	}
+	return s
+}
+
+func repoOverviewLocal(ctx *tool.ToolContext, dir string) tool.ToolResult {
+	var sb strings.Builder
+
+	sb.WriteString("## Directory tree\n\n")
+	if tree, err := dirTree(dir, 2, ""); err == nil {
+		sb.WriteString(tree)
+	} else {
+		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
+	}
+
+	sb.WriteString("\n## Recent commits\n\n")
+	cmd := exec.CommandContext(ctx.Ctx, "git", "log", "--oneline", "-10")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err == nil {
+		sb.WriteString(string(out))
+	} else {
+		sb.WriteString("(not a git repository or git error)\n")
+	}
+
+	keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
+	for _, name := range keyDocs {
+		path := filepath.Join(dir, name)
+		if data, err := os.ReadFile(path); err == nil {
+			sb.WriteString(fmt.Sprintf("\n## %s\n\n", name))
+			content := string(data)
+			if len(content) > 3000 {
+				content = content[:3000] + "\n\n... (truncated)"
+			}
+			sb.WriteString(content)
+			sb.WriteString("\n")
+		}
+	}
+
+	return tool.ToolResult{Content: sb.String()}
+}
+
+func repoOverviewRemote(ctx *tool.ToolContext, nwo string) tool.ToolResult {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## GitHub: %s\n\n", nwo))
+
+	// File tree (top 2 levels via gh api)
+	sb.WriteString("## Directory tree\n\n")
+	cmd := exec.CommandContext(ctx.Ctx, "gh", "api",
+		fmt.Sprintf("repos/%s/git/trees/HEAD?recursive=1", nwo),
+		"--jq", `.tree[] | select(.type == "blob" or .type == "tree") | .path`,
+	)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, line := range lines {
+			depth := strings.Count(line, "/")
+			if depth <= 1 {
+				sb.WriteString(line + "\n")
+			}
+		}
+	} else {
+		sb.WriteString(fmt.Sprintf("Error fetching tree: %v\n", err))
+	}
+
+	// Recent commits
+	sb.WriteString("\n## Recent commits\n\n")
+	cmd = exec.CommandContext(ctx.Ctx, "gh", "api",
+		fmt.Sprintf("repos/%s/commits?per_page=10", nwo),
+		"--jq", `.[] | (.sha[:7] + " " + (.commit.message | split("\n")[0]))`,
+	)
+	if out, err := cmd.CombinedOutput(); err == nil {
+		sb.WriteString(string(out))
+	} else {
+		sb.WriteString(fmt.Sprintf("Error fetching commits: %v\n", err))
+	}
+
+	// Key docs
+	keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
+	for _, name := range keyDocs {
+		cmd = exec.CommandContext(ctx.Ctx, "gh", "api",
+			fmt.Sprintf("repos/%s/contents/%s", nwo, name),
+			"--jq", ".content",
+		)
+		if out, err := cmd.CombinedOutput(); err == nil {
+			content := strings.TrimSpace(string(out))
+			if content != "" && content != "null" {
+				decoded, err := decodeBase64Content(content)
+				if err == nil {
+					if len(decoded) > 3000 {
+						decoded = decoded[:3000] + "\n\n... (truncated)"
+					}
+					sb.WriteString(fmt.Sprintf("\n## %s\n\n%s\n", name, decoded))
+				}
+			}
+		}
+	}
+
+	return tool.ToolResult{Content: sb.String()}
 }
 
 // dirTree builds a text representation of a directory tree up to maxDepth.
@@ -903,6 +995,16 @@ func ResearchDispatch(dispatchURL, wireToken string) tool.ToolDef {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// decodeBase64Content decodes GitHub API base64 content (which may contain newlines).
+func decodeBase64Content(s string) (string, error) {
+	cleaned := strings.ReplaceAll(s, "\n", "")
+	data, err := base64.StdEncoding.DecodeString(cleaned)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
 
 // stripHTML tokenizes HTML and extracts text content.
 func stripHTML(s string) (string, error) {

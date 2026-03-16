@@ -390,6 +390,74 @@ func TestAll(t *testing.T) {
 // Config-dependent error paths
 // ---------------------------------------------------------------------------
 
+func TestIsGitHubRepo(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"benaskins/axon", true},
+		{"https://github.com/benaskins/axon", true},
+		{"https://github.com/benaskins/axon.git", true},
+		{"https://github.com/benaskins/axon/tree/main/stream", true},
+		{"/Users/benaskins/dev/lamina/axon", false},
+		{"./relative/path", false},
+		{"just-a-name", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isGitHubRepo(tt.input); got != tt.want {
+				t.Errorf("isGitHubRepo(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeGitHubRepo(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"benaskins/axon", "benaskins/axon"},
+		{"https://github.com/benaskins/axon", "benaskins/axon"},
+		{"https://github.com/benaskins/axon.git", "benaskins/axon"},
+		{"https://github.com/benaskins/axon/tree/main/stream", "benaskins/axon"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := normalizeGitHubRepo(tt.input); got != tt.want {
+				t.Errorf("normalizeGitHubRepo(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodeBase64Content(t *testing.T) {
+	encoded := "SGVsbG8gV29ybGQ="  // "Hello World"
+	got, err := decodeBase64Content(encoded)
+	if err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if got != "Hello World" {
+		t.Errorf("got %q, want %q", got, "Hello World")
+	}
+}
+
+func TestRepoOverview_BackwardCompatDir(t *testing.T) {
+	tmp := t.TempDir()
+	exec.Command("git", "init", tmp).Run()
+	os.WriteFile(filepath.Join(tmp, "README.md"), []byte("# Test"), 0o644)
+	exec.Command("git", "-C", tmp, "add", ".").Run()
+	exec.Command("git", "-C", tmp, "commit", "-m", "init").Run()
+
+	td := RepoOverview()
+	// Use "dir" param (old name) for backward compatibility
+	result := td.Execute(newToolContext(), map[string]any{"dir": tmp})
+	if !strings.Contains(result.Content, "## README.md") {
+		t.Error("backward compat with 'dir' param failed")
+	}
+}
+
 func TestSearchNoURL(t *testing.T) {
 	td := Search("")
 	result := td.Execute(newToolContext(), map[string]any{"query": "test"})
