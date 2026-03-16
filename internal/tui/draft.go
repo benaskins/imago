@@ -199,15 +199,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) parseSections(content string) {
-	// Split on "---" separator
-	parts := strings.Split(content, "\n---\n")
-	m.sections = make([]string, 0, len(parts))
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
-			m.sections = append(m.sections, trimmed)
-		}
-	}
+	m.sections = splitSections(content)
 
 	if len(m.sections) == 0 {
 		m.sections = []string{content}

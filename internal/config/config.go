@@ -51,6 +51,5 @@ Rules:
 - Let strange or specific details stay — they're what make it real
 - No gendered pronouns for AI systems
 - Unsentimental — don't explain why something matters, let the reader figure it out
-- Split the post into clearly delineated sections with markdown headings
-- Each section should be separated by "---" on its own line
+- Structure the post with a # title heading followed by ## section headings
 - Start with a title as a # heading on the first line`
