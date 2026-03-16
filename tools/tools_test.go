@@ -84,6 +84,60 @@ func TestDirTree(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// read_files
+// ---------------------------------------------------------------------------
+
+func TestReadFiles(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "a.txt"), []byte("content a"), 0o644)
+	os.WriteFile(filepath.Join(tmp, "b.txt"), []byte("content b"), 0o644)
+
+	td := ReadFiles()
+
+	t.Run("reads multiple files", func(t *testing.T) {
+		result := td.Execute(newToolContext(), map[string]any{
+			"paths": []any{
+				filepath.Join(tmp, "a.txt"),
+				filepath.Join(tmp, "b.txt"),
+			},
+		})
+		if !strings.Contains(result.Content, "content a") {
+			t.Error("missing content a")
+		}
+		if !strings.Contains(result.Content, "content b") {
+			t.Error("missing content b")
+		}
+	})
+
+	t.Run("handles missing file", func(t *testing.T) {
+		result := td.Execute(newToolContext(), map[string]any{
+			"paths": []any{filepath.Join(tmp, "missing.txt")},
+		})
+		if !strings.Contains(result.Content, "Error:") {
+			t.Error("expected error for missing file")
+		}
+	})
+
+	t.Run("rejects more than 5", func(t *testing.T) {
+		paths := make([]any, 6)
+		for i := range paths {
+			paths[i] = "file.txt"
+		}
+		result := td.Execute(newToolContext(), map[string]any{"paths": paths})
+		if !strings.Contains(result.Content, "max 5") {
+			t.Errorf("expected max 5 error, got: %q", result.Content)
+		}
+	})
+
+	t.Run("rejects empty paths", func(t *testing.T) {
+		result := td.Execute(newToolContext(), map[string]any{"paths": []any{}})
+		if !strings.Contains(result.Content, "non-empty") {
+			t.Errorf("expected non-empty error, got: %q", result.Content)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // read_file
 // ---------------------------------------------------------------------------
 
@@ -312,7 +366,7 @@ func TestAll(t *testing.T) {
 	m := All(cfg)
 
 	expected := []string{
-		"repo_overview",
+		"repo_overview", "read_files",
 		"read_file", "git_log", "read_post", "list_posts",
 		"fetch_page", "search",
 		"aurelia_status", "aurelia_show", "lamina",

@@ -37,6 +37,7 @@ func All(cfg Config) map[string]tool.ToolDef {
 	m := make(map[string]tool.ToolDef)
 	for _, td := range []tool.ToolDef{
 		RepoOverview(),
+		ReadFiles(),
 		ReadFile(),
 		GitLog(),
 		ReadPost(cfg.SiteDir),
@@ -163,6 +164,56 @@ func dirTree(root string, maxDepth int, prefix string) (string, error) {
 	}
 
 	return sb.String(), nil
+}
+
+// ReadFiles returns a tool that reads multiple files in a single call.
+// Limited to 5 files per request to keep context manageable.
+func ReadFiles() tool.ToolDef {
+	return tool.ToolDef{
+		Name:        "read_files",
+		Description: "Read up to 5 files in a single call. Use after repo_overview to dig into specific files without burning multiple tool calls.",
+		Parameters: tool.ParameterSchema{
+			Type:     "object",
+			Required: []string{"paths"},
+			Properties: map[string]tool.PropertySchema{
+				"paths": {
+					Type:        "array",
+					Description: "List of file paths to read (max 5). Each element is a string path.",
+				},
+			},
+		},
+		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
+			rawPaths, ok := args["paths"].([]any)
+			if !ok || len(rawPaths) == 0 {
+				return tool.ToolResult{Content: "Error: paths must be a non-empty array of strings."}
+			}
+			if len(rawPaths) > 5 {
+				return tool.ToolResult{Content: "Error: max 5 files per request."}
+			}
+
+			var sb strings.Builder
+			for i, raw := range rawPaths {
+				path, ok := raw.(string)
+				if !ok || path == "" {
+					sb.WriteString(fmt.Sprintf("## [%d] (invalid path)\n\nError: not a string.\n\n", i+1))
+					continue
+				}
+				sb.WriteString(fmt.Sprintf("## %s\n\n", path))
+				data, err := os.ReadFile(path)
+				if err != nil {
+					sb.WriteString(fmt.Sprintf("Error: %v\n\n", err))
+					continue
+				}
+				content := string(data)
+				if len(content) > 10000 {
+					content = content[:10000] + "\n\n... (truncated at 10000 chars)"
+				}
+				sb.WriteString(content)
+				sb.WriteString("\n\n")
+			}
+			return tool.ToolResult{Content: sb.String()}
+		},
+	}
 }
 
 // ---------------------------------------------------------------------------
