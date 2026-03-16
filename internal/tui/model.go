@@ -72,14 +72,17 @@ type Model struct {
 	messages []loop.Message // full conversation history
 
 	// Draft state
-	sections      []string // markdown sections of the draft
-	rendered      []string // glamour-rendered sections
-	sectionIndex  int      // current section being reviewed
-	approved      []bool   // which sections are approved
-	draftFinished bool     // all sections approved
-	finalConfirm  bool     // waiting for final confirmation
-	finalMarkdown string   // the complete markdown output
-	draftError    string   // error message to display in draft phase
+	sections        []string           // markdown sections of the draft
+	rendered        []string           // glamour-rendered sections
+	sectionIndex    int                // current section being reviewed
+	approved        []bool             // which sections are approved
+	draftFinished   bool               // all sections approved
+	finalConfirm    bool               // waiting for final confirmation
+	finalMarkdown   string             // the complete markdown output
+	draftError      string             // error message to display in draft phase
+	fullDraft       string             // complete draft text for context
+	sectionHistory  [][]loop.Message   // per-section conversation history
+	revisionEntries [][]chatEntry      // per-section chat entries for display
 
 	// Session persistence
 	session *session.State

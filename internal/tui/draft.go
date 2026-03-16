@@ -26,7 +26,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 
 	// Reset input for draft controls
 	m.input.Reset()
-	m.input.Placeholder = "k/keep to approve, or type revision directive..."
+	m.input.Placeholder = "k/keep to approve, or type feedback..."
 	m.input.Focus()
 
 	slog.Info("draft generation starting", "model", config.DraftModel, "num_ctx", config.DraftNumCtx, "messages", len(m.messages))
@@ -88,12 +88,11 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Guard: no sections to work with
 			if len(m.sections) == 0 {
-				// Retry draft generation
 				slog.Info("retrying draft generation")
 				return m.transitionToDraft()
 			}
 
-			// Handle section approval or revision
+			// Handle section approval
 			if text == "k" || text == "keep" {
 				slog.Info("section approved", "section", m.sectionIndex+1, "total", len(m.sections))
 				m.approved[m.sectionIndex] = true
@@ -103,7 +102,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Check if all sections approved
 				if m.sectionIndex >= len(m.sections) {
 					m.finalConfirm = true
-					m.finalMarkdown = strings.Join(m.sections, "\n\n---\n\n")
+					m.finalMarkdown = assembleDraft(m.sections)
 					m.refreshDraftViewport()
 					return m, nil
 				}
@@ -112,10 +111,21 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Revision directive — send to LLM
-			slog.Info("section revision", "section", m.sectionIndex+1, "directive", text)
+			// Conversational revision — add to section history
+			slog.Info("section feedback", "section", m.sectionIndex+1, "text", text)
+			idx := m.sectionIndex
+			m.sectionHistory[idx] = append(m.sectionHistory[idx], loop.Message{
+				Role:    "user",
+				Content: text,
+			})
+			m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
+				role:    "user",
+				content: text,
+			})
 			m.waiting = true
-			return m, m.reviseSection(text)
+			m.draftError = ""
+			m.refreshDraftViewport()
+			return m, m.reviseSection()
 		}
 
 	case tea.WindowSizeMsg:
@@ -150,7 +160,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if content == "" {
 				content = m.streaming
 			}
-			slog.Info("draft generation complete", "content_length", len(content), "sections_before_parse", len(m.sections))
+			slog.Info("draft generation complete", "content_length", len(content))
 			if content != "" {
 				m.parseSections(content)
 				slog.Info("draft parsed", "sections", len(m.sections))
@@ -179,8 +189,22 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.draftError = ""
-		m.sections[m.sectionIndex] = msg.content
-		m.rendered[m.sectionIndex] = renderMarkdown(msg.content, m.width)
+
+		idx := m.sectionIndex
+
+		// Add agent response to section history
+		m.sectionHistory[idx] = append(m.sectionHistory[idx], loop.Message{
+			Role:    "assistant",
+			Content: msg.content,
+		})
+		m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
+			role:    "agent",
+			content: msg.content,
+		})
+
+		// Update the section with the agent's response
+		m.sections[idx] = msg.content
+		m.rendered[idx] = renderMarkdown(msg.content, m.width)
 		m.waiting = false
 		m.saveSession()
 		m.refreshDraftViewport()
@@ -199,6 +223,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) parseSections(content string) {
+	m.fullDraft = content
 	m.sections = splitSections(content)
 
 	if len(m.sections) == 0 {
@@ -207,10 +232,94 @@ func (m *Model) parseSections(content string) {
 
 	m.approved = make([]bool, len(m.sections))
 	m.rendered = make([]string, len(m.sections))
+	m.sectionHistory = make([][]loop.Message, len(m.sections))
+	m.revisionEntries = make([][]chatEntry, len(m.sections))
 	for i, s := range m.sections {
 		m.rendered[i] = renderMarkdown(s, m.width)
 	}
 	m.sectionIndex = 0
+}
+
+// interviewTranscript formats the interview messages as a readable transcript
+// for inclusion in revision context.
+func (m Model) interviewTranscript() string {
+	var sb strings.Builder
+	for _, msg := range m.messages {
+		switch msg.Role {
+		case "system":
+			continue
+		case "user":
+			// Skip the draft prompt (last user message)
+			if msg.Content == config.DraftPrompt {
+				continue
+			}
+			sb.WriteString("**Author:** ")
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		case "assistant":
+			sb.WriteString("**Interviewer:** ")
+			sb.WriteString(msg.Content)
+			sb.WriteString("\n\n")
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// reviseSection sends the current section to the LLM with full context
+// (interview transcript, full draft, section history).
+func (m Model) reviseSection() tea.Cmd {
+	idx := m.sectionIndex
+	systemPrompt := fmt.Sprintf(config.RevisionPromptTemplate,
+		m.interviewTranscript(),
+		m.fullDraft,
+		m.sections[idx],
+	)
+
+	// Build messages: system prompt + conversation history for this section
+	messages := []loop.Message{
+		{Role: "system", Content: systemPrompt},
+	}
+	messages = append(messages, m.sectionHistory[idx]...)
+
+	req := &loop.Request{
+		Model:    config.DraftModel,
+		Messages: messages,
+		Stream:   true,
+		Options:  map[string]any{"num_ctx": config.DraftNumCtx},
+	}
+
+	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
+
+	// Collect the full response then return as sectionReviseMsg
+	return func() tea.Msg {
+		var content strings.Builder
+		for ev := range ch {
+			if ev.Err != nil {
+				return sectionReviseMsg{err: ev.Err}
+			}
+			if ev.Token != "" {
+				content.WriteString(ev.Token)
+			}
+			if ev.Done != nil {
+				c := ev.Done.Content
+				if c == "" {
+					c = content.String()
+				}
+				return sectionReviseMsg{content: c}
+			}
+		}
+		// Channel closed without Done event
+		c := content.String()
+		if c == "" {
+			return sectionReviseMsg{err: fmt.Errorf("revision produced no content")}
+		}
+		return sectionReviseMsg{content: c}
+	}
+}
+
+// assembleDraft joins approved sections into a complete markdown document.
+func assembleDraft(sections []string) string {
+	return strings.Join(sections, "\n\n")
 }
 
 func (m *Model) refreshDraftViewport() {
@@ -218,6 +327,10 @@ func (m *Model) refreshDraftViewport() {
 	w := m.width
 	if w <= 0 {
 		w = 80
+	}
+	contentWidth := w - 4
+	if contentWidth < 20 {
+		contentWidth = 20
 	}
 
 	// Error state
@@ -289,9 +402,28 @@ func (m *Model) refreshDraftViewport() {
 
 	// Render current section
 	if m.sectionIndex < len(m.rendered) {
-		bordered := sectionBorderStyle.Width(w - 4).Render(m.rendered[m.sectionIndex])
+		bordered := sectionBorderStyle.Width(contentWidth).Render(m.rendered[m.sectionIndex])
 		sb.WriteString(bordered)
 		sb.WriteString("\n")
+	}
+
+	// Show revision conversation for current section
+	if m.sectionIndex < len(m.revisionEntries) {
+		for _, e := range m.revisionEntries[m.sectionIndex] {
+			sb.WriteString("\n")
+			switch e.role {
+			case "user":
+				sb.WriteString(userStyle.Render("you") + " ")
+				sb.WriteString(wordWrap(e.content, contentWidth-5))
+				sb.WriteString("\n")
+			case "agent":
+				sb.WriteString(agentLabelStyle.Render("imago") + " ")
+				// Show a summary, not the full revised section
+				preview := revisionPreview(e.content)
+				sb.WriteString(agentStyle.Width(contentWidth - 7).Render(preview))
+				sb.WriteString("\n")
+			}
+		}
 	}
 
 	if m.waiting {
@@ -303,9 +435,20 @@ func (m *Model) refreshDraftViewport() {
 	m.viewport.GotoBottom()
 }
 
+// revisionPreview returns a short preview of a revision response.
+// Since the agent returns the full revised section, we show a summary
+// rather than repeating the entire section in the conversation.
+func revisionPreview(content string) string {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+	if len(lines) <= 3 {
+		return content
+	}
+	return lines[0] + "\n" + lines[1] + "\n..."
+}
+
 func (m Model) viewDraft() string {
 	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("k/keep to approve | type directive to revise | ctrl+c quit") + "  " + model
+	status := statusStyle.Render("k/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
 	if m.waiting {
 		status = statusStyle.Render("generating...") + "  " + model
 	}
@@ -319,70 +462,6 @@ func (m Model) viewDraft() string {
 		status,
 		m.input.View(),
 	)
-}
-
-func (m Model) reviseSection(directive string) tea.Cmd {
-	ch := make(chan streamEvent, 64)
-
-	go func() {
-		defer close(ch)
-		ctx := context.Background()
-
-		revisePrompt := fmt.Sprintf(
-			"Here is the current section:\n\n%s\n\nRevision directive: %s\n\nRewrite the section applying the directive. Output only the revised section markdown, nothing else.",
-			m.sections[m.sectionIndex],
-			directive,
-		)
-
-		messages := []loop.Message{
-			{Role: "system", Content: "You are a skilled editor revising a blog post section. Apply the directive precisely."},
-			{Role: "user", Content: revisePrompt},
-		}
-
-		req := &loop.Request{
-			Model:    config.DraftModel,
-			Messages: messages,
-			Stream:   true,
-			Options:  map[string]any{"num_ctx": config.DraftNumCtx},
-		}
-
-		var full strings.Builder
-		cb := loop.Callbacks{
-			OnToken: func(token string) {
-				full.WriteString(token)
-				ch <- streamEvent{token: token}
-			},
-		}
-
-		_, err := loop.Run(ctx, m.client, req, nil, nil, cb)
-		if err != nil {
-			ch <- streamEvent{err: err}
-			return
-		}
-
-		ch <- streamEvent{done: true, content: full.String()}
-	}()
-
-	// Collect everything then update the section
-	return func() tea.Msg {
-		var content strings.Builder
-		for ev := range ch {
-			if ev.err != nil {
-				return sectionReviseMsg{err: ev.err}
-			}
-			if ev.token != "" {
-				content.WriteString(ev.token)
-			}
-			if ev.done {
-				c := ev.content
-				if c == "" {
-					c = content.String()
-				}
-				return sectionReviseMsg{content: c}
-			}
-		}
-		return sectionReviseMsg{content: content.String()}
-	}
 }
 
 func renderMarkdown(md string, width int) string {
