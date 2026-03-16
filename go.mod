@@ -4,8 +4,9 @@ go 1.26.1
 
 require (
 	github.com/benaskins/axon-loop v0.5.0
-	github.com/benaskins/axon-talk v0.2.3
-	github.com/benaskins/axon-tool v0.1.3
+	github.com/benaskins/axon-talk v0.2.5
+	github.com/benaskins/axon-tool v0.1.4
+	github.com/benaskins/axon-wire v0.0.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
@@ -21,6 +22,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/benaskins/axon v0.4.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
@@ -54,8 +56,14 @@ require (
 	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-emoji v1.0.6 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
+
+replace (
+	github.com/benaskins/axon-talk => /Users/benaskins/dev/lamina/axon-talk
+	github.com/benaskins/axon-tool => /Users/benaskins/dev/lamina/axon-tool
+	github.com/benaskins/axon-wire => /Users/benaskins/dev/lamina/axon-wire
 )

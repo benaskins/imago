@@ -25,32 +25,48 @@ import (
 // Config holds external configuration for tools that depend on
 // environment-specific URLs, paths, or credentials.
 type Config struct {
-	SiteDir    string // path to generativeplane.com site directory
-	SyndURL    string // synd server base URL
-	SyndToken  string // auth token for synd API
-	MemoURL    string // axon-memo service URL
-	SearXNGURL string // SearXNG instance URL
+	SiteDir     string       // path to generativeplane.com site directory
+	SyndURL     string       // synd server base URL
+	SyndToken   string       // auth token for synd API
+	MemoURL     string       // axon-memo service URL
+	SearXNGURL  string       // SearXNG instance URL
+	DispatchURL string       // research dispatch worker URL
+	WireToken   string       // shared auth token for wire proxy / dispatch
+	HTTPClient  *http.Client // optional custom HTTP client for outbound requests
 }
 
 // All returns the complete tool map for imago, keyed by tool name.
 func All(cfg Config) map[string]tool.ToolDef {
-	m := make(map[string]tool.ToolDef)
-	for _, td := range []tool.ToolDef{
+	var fetchOpts []tool.PageFetcherOption
+	var searxOpts []tool.SearXNGOption
+	if cfg.HTTPClient != nil {
+		fetchOpts = append(fetchOpts, tool.WithHTTPClient(cfg.HTTPClient))
+		searxOpts = append(searxOpts, tool.WithSearXNGHTTPClient(cfg.HTTPClient))
+	}
+
+	defs := []tool.ToolDef{
 		RepoOverview(),
 		ReadFiles(),
 		ReadFile(),
 		GitLog(),
 		ReadPost(cfg.SiteDir),
 		ListPosts(cfg.SiteDir),
-		FetchPage(),
-		Search(cfg.SearXNGURL),
+		FetchPage(fetchOpts...),
+		Search(cfg.SearXNGURL, searxOpts...),
 		AureliaStatus(),
 		AureliaShow(),
 		Lamina(),
 		SubmitDraft(cfg.SyndURL, cfg.SyndToken),
 		Recall(cfg.MemoURL),
 		ListDir(),
-	} {
+	}
+
+	if cfg.DispatchURL != "" {
+		defs = append(defs, ResearchDispatch(cfg.DispatchURL, cfg.WireToken))
+	}
+
+	m := make(map[string]tool.ToolDef)
+	for _, td := range defs {
 		m[td.Name] = td
 	}
 	return m
@@ -444,7 +460,7 @@ func ListPosts(siteDir string) tool.ToolDef {
 
 // FetchPage returns a tool that fetches a URL and returns extracted text.
 // It uses axon-tool's PageFetcher without LLM extraction (raw text mode).
-func FetchPage() tool.ToolDef {
+func FetchPage(opts ...tool.PageFetcherOption) tool.ToolDef {
 	return tool.ToolDef{
 		Name:        "fetch_page",
 		Description: "Fetch a web page and return its extracted text content. Use to read articles, documentation, or any web page.",
@@ -463,7 +479,7 @@ func FetchPage() tool.ToolDef {
 			if urlStr == "" {
 				return tool.ToolResult{Content: "Error: url is required."}
 			}
-			fetcher := tool.NewPageFetcher(nil) // no LLM extraction
+			fetcher := tool.NewPageFetcher(nil, opts...) // no LLM extraction
 			text, err := fetcher.FetchAndExtract(ctx.Ctx, urlStr, "")
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error fetching page: %v", err)}
@@ -474,7 +490,7 @@ func FetchPage() tool.ToolDef {
 }
 
 // Search returns a tool that searches the web via SearXNG.
-func Search(searxngURL string) tool.ToolDef {
+func Search(searxngURL string, opts ...tool.SearXNGOption) tool.ToolDef {
 	return tool.ToolDef{
 		Name:        "search",
 		Description: "Search the web using SearXNG. Returns titles, URLs, and snippets for the top results.",
@@ -496,7 +512,7 @@ func Search(searxngURL string) tool.ToolDef {
 			if searxngURL == "" {
 				return tool.ToolResult{Content: "Error: SearXNG URL not configured."}
 			}
-			client := tool.NewSearXNGClient(searxngURL)
+			client := tool.NewSearXNGClient(searxngURL, opts...)
 			results, err := client.Search(ctx.Ctx, query, 5)
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Search failed: %v", err)}
@@ -762,6 +778,124 @@ func Recall(memoURL string) tool.ToolDef {
 			}
 
 			return tool.ToolResult{Content: string(respBody)}
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Cloud research tools
+// ---------------------------------------------------------------------------
+
+// ResearchDispatch returns a tool that fans out multiple URL fetches in
+// parallel via the Cloudflare research-dispatch worker. Use when the agent
+// needs to fetch several pages at once — one call instead of sequential
+// fetch_page calls.
+func ResearchDispatch(dispatchURL, wireToken string) tool.ToolDef {
+	return tool.ToolDef{
+		Name:        "research",
+		Description: "Fetch multiple web pages in parallel via the cloud research worker. Use when you need to read several URLs at once — much faster than calling fetch_page repeatedly. Returns all results in one response. Optionally summarise each page.",
+		Parameters: tool.ParameterSchema{
+			Type:     "object",
+			Required: []string{"urls"},
+			Properties: map[string]tool.PropertySchema{
+				"urls": {
+					Type:        "array",
+					Description: "List of URLs to fetch in parallel (max 20).",
+				},
+				"summarize": {
+					Type:        "string",
+					Description: "Set to 'true' to get AI-generated summaries of each page alongside the raw content.",
+				},
+			},
+		},
+		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
+			rawURLs, ok := args["urls"].([]any)
+			if !ok || len(rawURLs) == 0 {
+				return tool.ToolResult{Content: "Error: urls must be a non-empty array of strings."}
+			}
+			if len(rawURLs) > 20 {
+				return tool.ToolResult{Content: "Error: max 20 URLs per dispatch."}
+			}
+
+			summarize := false
+			if s, ok := args["summarize"].(string); ok && s == "true" {
+				summarize = true
+			}
+
+			type task struct {
+				URL       string `json:"url"`
+				Summarize bool   `json:"summarize,omitempty"`
+			}
+			tasks := make([]task, 0, len(rawURLs))
+			for _, raw := range rawURLs {
+				u, ok := raw.(string)
+				if !ok || u == "" {
+					continue
+				}
+				tasks = append(tasks, task{URL: u, Summarize: summarize})
+			}
+
+			payload, err := json.Marshal(map[string]any{"tasks": tasks})
+			if err != nil {
+				return tool.ToolResult{Content: fmt.Sprintf("Error encoding request: %v", err)}
+			}
+
+			url := strings.TrimRight(dispatchURL, "/") + "/dispatch"
+			req, err := http.NewRequestWithContext(ctx.Ctx, http.MethodPost, url, bytes.NewReader(payload))
+			if err != nil {
+				return tool.ToolResult{Content: fmt.Sprintf("Error creating request: %v", err)}
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if wireToken != "" {
+				req.Header.Set("X-Wire-Token", wireToken)
+			}
+
+			client := &http.Client{Timeout: 60 * time.Second}
+			resp, err := client.Do(req)
+			if err != nil {
+				return tool.ToolResult{Content: fmt.Sprintf("Error dispatching research: %v", err)}
+			}
+			defer resp.Body.Close()
+
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+
+			if resp.StatusCode != http.StatusOK {
+				return tool.ToolResult{Content: fmt.Sprintf("Dispatch returned %d: %s", resp.StatusCode, string(respBody))}
+			}
+
+			var result struct {
+				Results []struct {
+					URL     string `json:"url"`
+					Status  int    `json:"status"`
+					Body    string `json:"body"`
+					Summary string `json:"summary,omitempty"`
+					Error   string `json:"error,omitempty"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				return tool.ToolResult{Content: fmt.Sprintf("Error decoding response: %v", err)}
+			}
+
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("Fetched %d pages:\n\n", len(result.Results)))
+			for _, r := range result.Results {
+				sb.WriteString(fmt.Sprintf("## %s (HTTP %d)\n\n", r.URL, r.Status))
+				if r.Error != "" {
+					sb.WriteString(fmt.Sprintf("Error: %s\n\n", r.Error))
+					continue
+				}
+				if r.Summary != "" {
+					sb.WriteString(fmt.Sprintf("**Summary:** %s\n\n", r.Summary))
+				}
+				content := r.Body
+				if len(content) > 5000 {
+					content = content[:5000] + "\n\n... (truncated)"
+				}
+				sb.WriteString(content)
+				sb.WriteString("\n\n")
+			}
+
+			return tool.ToolResult{Content: sb.String()}
 		},
 	}
 }

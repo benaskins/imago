@@ -2,12 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	loop "github.com/benaskins/axon-loop"
+	cf "github.com/benaskins/axon-talk/cloudflare"
 	"github.com/benaskins/axon-talk/ollama"
+	"github.com/benaskins/axon-wire"
 
 	"github.com/benaskins/imago/internal/logging"
 	"github.com/benaskins/imago/internal/session"
@@ -23,11 +27,11 @@ func main() {
 		defer cleanup()
 	}
 
-	client, err := ollama.NewClientFromEnvironment()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to connect to ollama: %v\n", err)
-		os.Exit(1)
-	}
+	// Select LLM client: Cloudflare if configured, otherwise Ollama.
+	client := selectLLMClient()
+
+	// Build HTTP client — routes through wire proxy if AXON_WIRE_URL is set.
+	httpClient := wire.NewClient()
 
 	// Load tool config from environment
 	syndToken := ""
@@ -36,11 +40,14 @@ func main() {
 	}
 
 	cfg := tools.Config{
-		SiteDir:    envOrDefault("SYND_SITE_DIR", ""),
-		SyndURL:    envOrDefault("SYND_SERVICE_URL", ""),
-		SyndToken:  syndToken,
-		MemoURL:    envOrDefault("MEMO_SERVICE_URL", ""),
-		SearXNGURL: envOrDefault("SEARXNG_URL", ""),
+		SiteDir:     envOrDefault("SYND_SITE_DIR", ""),
+		SyndURL:     envOrDefault("SYND_SERVICE_URL", ""),
+		SyndToken:   syndToken,
+		MemoURL:     envOrDefault("MEMO_SERVICE_URL", ""),
+		SearXNGURL:  envOrDefault("SEARXNG_URL", ""),
+		DispatchURL: envOrDefault("AXON_DISPATCH_URL", ""),
+		WireToken:   envOrDefault("AXON_WIRE_TOKEN", ""),
+		HTTPClient:  httpClient,
 	}
 
 	allTools := tools.All(cfg)
@@ -68,6 +75,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// selectLLMClient returns a Cloudflare Workers AI client if the gateway
+// env vars are set, otherwise falls back to local Ollama.
+func selectLLMClient() loop.LLMClient {
+	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	token := os.Getenv("CLOUDFLARE_AXON_GATE_TOKEN")
+
+	if accountID != "" && token != "" {
+		baseURL := "https://gateway.ai.cloudflare.com/v1/" + accountID + "/axon-gate/workers-ai"
+		slog.Info("using Cloudflare Workers AI", "gateway", "axon-gate")
+		return cf.NewClient(baseURL, token)
+	}
+
+	client, err := ollama.NewClientFromEnvironment()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to connect to ollama: %v\n", err)
+		os.Exit(1)
+	}
+	slog.Info("using Ollama for inference")
+	return client
 }
 
 func envOrDefault(key, fallback string) string {
