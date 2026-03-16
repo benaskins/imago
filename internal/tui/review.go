@@ -63,7 +63,16 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.session != nil {
 					m.session.MarkComplete()
 				}
-				fmt.Print(m.finalMarkdown)
+				path, err := writeDraft(m.finalMarkdown)
+				if err != nil {
+					slog.Error("failed to write draft", "error", err)
+					m.draftError = fmt.Sprintf("Failed to save: %v", err)
+					m.refreshReviewViewport()
+					return m, nil
+				}
+				slog.Info("draft saved", "path", path)
+				// Print path after alt-screen exits so user can see it
+				fmt.Printf("\nDraft saved to %s\n", path)
 				return m, tea.Quit
 			}
 
