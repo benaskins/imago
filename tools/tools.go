@@ -47,7 +47,6 @@ func All(cfg Config) map[string]tool.ToolDef {
 		Lamina(),
 		SubmitDraft(cfg.SyndURL, cfg.SyndToken),
 		Recall(cfg.MemoURL),
-		Claude(),
 		ListDir(),
 	} {
 		m[td.Name] = td
@@ -601,36 +600,6 @@ func Recall(memoURL string) tool.ToolDef {
 			}
 
 			return tool.ToolResult{Content: string(respBody)}
-		},
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Research tools
-// ---------------------------------------------------------------------------
-
-// Claude returns a placeholder tool definition for the Claude Code research tool.
-// The actual implementation requires axon-task's in-process executor.
-func Claude() tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "claude",
-		Description: "Spawn a Claude Code session for deep code research. Reads code, follows references, and reports findings. Use for technical questions about the codebase that require exploring multiple files.",
-		Parameters: tool.ParameterSchema{
-			Type:     "object",
-			Required: []string{"task"},
-			Properties: map[string]tool.PropertySchema{
-				"task": {
-					Type:        "string",
-					Description: "The research question or task to investigate.",
-				},
-				"dir": {
-					Type:        "string",
-					Description: "The repository directory to research in.",
-				},
-			},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			return tool.ToolResult{Content: "claude tool not yet wired — requires axon-task executor"}
 		},
 	}
 }

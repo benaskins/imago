@@ -79,6 +79,7 @@ type Model struct {
 	draftFinished bool     // all sections approved
 	finalConfirm  bool     // waiting for final confirmation
 	finalMarkdown string   // the complete markdown output
+	draftError    string   // error message to display in draft phase
 
 	// Session persistence
 	session *session.State
@@ -386,8 +387,10 @@ func (m Model) viewInterview() string {
 // reads events from the channel.
 func (m Model) startLLM(modelName string) tea.Cmd {
 	maxTokens := config.InterviewMaxTokens
+	numCtx := config.InterviewNumCtx
 	if m.phase == phaseDraft {
 		maxTokens = config.DraftMaxTokens
+		numCtx = config.DraftNumCtx
 	}
 
 	req := &loop.Request{
@@ -395,6 +398,7 @@ func (m Model) startLLM(modelName string) tea.Cmd {
 		Messages:  m.messages,
 		Stream:    true,
 		MaxTokens: maxTokens,
+		Options:   map[string]any{"num_ctx": numCtx},
 	}
 
 	if len(m.tools) > 0 {

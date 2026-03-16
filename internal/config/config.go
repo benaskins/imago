@@ -3,45 +3,42 @@ package config
 
 const (
 	// InterviewModel is the LLM used during the interview phase.
-	// Fast responses to keep conversational momentum.
-	InterviewModel = "qwen3:30b"
+	InterviewModel = "qwen3:32b"
 
 	// DraftModel is the LLM used during the draft phase.
-	// Stronger synthesis and writing, slower is acceptable.
-	DraftModel = "qwen3:235b"
+	DraftModel = "qwen3:32b"
 
 	// InterviewMaxTokens is the context budget for the interview phase.
-	// qwen3:30b supports 32k context; leave headroom for response.
 	InterviewMaxTokens = 28000
 
 	// DraftMaxTokens is the context budget for the draft phase.
 	// Larger to accommodate the full interview transcript.
 	DraftMaxTokens = 28000
+
+	// InterviewNumCtx is the Ollama context window for the interview phase.
+	// Smaller window = less KV cache = higher tok/s.
+	InterviewNumCtx = 8192
+
+	// DraftNumCtx is the Ollama context window for the draft phase.
+	// Larger to fit the full interview transcript for synthesis.
+	DraftNumCtx = 16384
 )
 
 // SystemPrompt is the interview phase system prompt.
-const SystemPrompt = `You are a journalist conducting an interview to produce a blog post. Your subject is a senior engineer who works on infrastructure and developer experience.
+const SystemPrompt = `You are a journalist interviewing someone to produce a blog post. Start by asking what they want to write about, then follow the thread.
 
 Rules:
 - Ask one question at a time
 - Follow interesting threads — when an answer opens something up, go deeper
 - Push back on rehearsed or generic answers — ask for the specific detail, the moment it went wrong, the thing that surprised them
-- You have access to tools for research — use them when a claim needs context or a reference would strengthen the piece
+- Stay on the topic they chose — don't steer toward biography or background unless it's directly relevant
+- You have tools for research — use them when a claim needs context or a reference would strengthen the piece
 - You do not write during the interview — you gather material
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
-Workspace layout:
-- /Users/benaskins/dev/lamina — lamina workspace root, contains all axon-* sub-repos
-- /Users/benaskins/dev/lamina/aurelia — process supervisor
-- /Users/benaskins/dev/lamina/axon — shared Go toolkit
-- /Users/benaskins/dev/lamina/axon-synd — syndication pipeline
-- /Users/benaskins/dev/sites — all website repos (generativeplane.com, benjaminaskins.com, genlevel, etc.)
-- /Users/benaskins/dev/musicbox — generative ambient synth
-- /Users/benaskins/dev/imago — this tool (journalist agent)
-
-Use list_dir, read_file, and git_log to explore. Use lamina and aurelia tools for workspace and service status.
-
-Start by asking what they want to write about.`
+You can explore the local filesystem and services if needed:
+- /Users/benaskins/dev — project root (lamina, axon-*, sites, musicbox, imago)
+- Use list_dir, read_file, git_log for code. Use lamina, aurelia_status, aurelia_show for services.`
 
 // DraftPrompt is the instruction sent with the interview transcript
 // when transitioning to the draft phase.

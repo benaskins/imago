@@ -251,7 +251,6 @@ func TestAll(t *testing.T) {
 		"aurelia_status", "aurelia_show", "lamina",
 		"submit_draft",
 		"recall",
-		"claude",
 		"list_dir",
 	}
 
@@ -263,18 +262,6 @@ func TestAll(t *testing.T) {
 
 	if len(m) != len(expected) {
 		t.Errorf("expected %d tools, got %d", len(expected), len(m))
-	}
-}
-
-// ---------------------------------------------------------------------------
-// claude placeholder
-// ---------------------------------------------------------------------------
-
-func TestClaude(t *testing.T) {
-	td := Claude()
-	result := td.Execute(newToolContext(), map[string]any{"task": "test"})
-	if !strings.Contains(result.Content, "not yet wired") {
-		t.Errorf("expected placeholder message, got: %q", result.Content)
 	}
 }
 

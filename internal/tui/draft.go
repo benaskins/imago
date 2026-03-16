@@ -22,11 +22,14 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	m.phase = phaseDraft
 	m.waiting = true
 	m.streaming = ""
+	m.draftError = ""
 
 	// Reset input for draft controls
 	m.input.Reset()
 	m.input.Placeholder = "k/keep to approve, or type revision directive..."
 	m.input.Focus()
+
+	slog.Info("draft generation starting", "model", config.DraftModel, "num_ctx", config.DraftNumCtx, "messages", len(m.messages))
 
 	// Build the draft request: full transcript + draft prompt
 	draftMessages := make([]loop.Message, len(m.messages))
@@ -43,6 +46,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 		Messages:  draftMessages,
 		Stream:    true,
 		MaxTokens: config.DraftMaxTokens,
+		Options:   map[string]any{"num_ctx": config.DraftNumCtx},
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
@@ -80,6 +84,13 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.finalConfirm = false
 				m.refreshDraftViewport()
 				return m, nil
+			}
+
+			// Guard: no sections to work with
+			if len(m.sections) == 0 {
+				// Retry draft generation
+				slog.Info("retrying draft generation")
+				return m.transitionToDraft()
 			}
 
 			// Handle section approval or revision
@@ -127,16 +138,26 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamTickMsg:
 		ev := msg.event
 		if ev.err != nil {
-			m.entries = append(m.entries, chatEntry{role: "agent", content: fmt.Sprintf("Error: %v", ev.err)})
+			slog.Error("draft stream error", "error", ev.err)
+			m.draftError = ev.err.Error()
 			m.streaming = ""
 			m.waiting = false
 			m.refreshDraftViewport()
 			return m, nil
 		}
 		if ev.done {
-			if ev.content != "" {
-				m.parseSections(ev.content)
+			content := ev.content
+			if content == "" {
+				content = m.streaming
+			}
+			slog.Info("draft generation complete", "content_length", len(content), "sections_before_parse", len(m.sections))
+			if content != "" {
+				m.parseSections(content)
+				slog.Info("draft parsed", "sections", len(m.sections))
 				m.saveSession()
+			} else {
+				slog.Warn("draft generation produced no content")
+				m.draftError = "Draft generation produced no content. Press enter to retry."
 			}
 			m.streaming = ""
 			m.waiting = false
@@ -150,6 +171,14 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForEvent(msg.ch)
 
 	case sectionReviseMsg:
+		if msg.err != nil {
+			slog.Error("section revision error", "error", msg.err)
+			m.draftError = msg.err.Error()
+			m.waiting = false
+			m.refreshDraftViewport()
+			return m, nil
+		}
+		m.draftError = ""
 		m.sections[m.sectionIndex] = msg.content
 		m.rendered[m.sectionIndex] = renderMarkdown(msg.content, m.width)
 		m.waiting = false
@@ -199,6 +228,17 @@ func (m *Model) refreshDraftViewport() {
 		w = 80
 	}
 
+	// Error state
+	if m.draftError != "" && !m.waiting {
+		sb.WriteString(headerStyle.Render("Draft error"))
+		sb.WriteString("\n\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.draftError))
+		sb.WriteString("\n\n")
+		sb.WriteString(statusStyle.Render("Press enter to retry."))
+		m.viewport.SetContent(sb.String())
+		return
+	}
+
 	if m.waiting && len(m.sections) == 0 {
 		// Still generating the draft
 		sb.WriteString(headerStyle.Render("Generating draft..."))
@@ -223,6 +263,14 @@ func (m *Model) refreshDraftViewport() {
 
 		m.viewport.SetContent(sb.String())
 		m.viewport.GotoBottom()
+		return
+	}
+
+	if len(m.sections) == 0 {
+		sb.WriteString(headerStyle.Render("No draft content"))
+		sb.WriteString("\n\n")
+		sb.WriteString(statusStyle.Render("Press enter to retry draft generation."))
+		m.viewport.SetContent(sb.String())
 		return
 	}
 
@@ -303,6 +351,7 @@ func (m Model) reviseSection(directive string) tea.Cmd {
 			Model:    config.DraftModel,
 			Messages: messages,
 			Stream:   true,
+			Options:  map[string]any{"num_ctx": config.DraftNumCtx},
 		}
 
 		var full strings.Builder
@@ -322,13 +371,12 @@ func (m Model) reviseSection(directive string) tea.Cmd {
 		ch <- streamEvent{done: true, content: full.String()}
 	}()
 
-	// For revision, we handle the stream differently —
-	// collect everything then update the section
+	// Collect everything then update the section
 	return func() tea.Msg {
 		var content strings.Builder
 		for ev := range ch {
 			if ev.err != nil {
-				return errMsg{err: ev.err}
+				return sectionReviseMsg{err: ev.err}
 			}
 			if ev.token != "" {
 				content.WriteString(ev.token)

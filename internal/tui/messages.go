@@ -30,4 +30,5 @@ type sectionDoneMsg struct {
 // sectionReviseMsg carries the revised section content.
 type sectionReviseMsg struct {
 	content string
+	err     error
 }
