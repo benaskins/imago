@@ -404,11 +404,13 @@ func (m Model) startLLM(modelName string) tea.Cmd {
 		numCtx = config.DraftNumCtx
 	}
 
+	noThink := false
 	req := &loop.Request{
 		Model:     modelName,
 		Messages:  m.messages,
 		Stream:    true,
 		MaxTokens: maxTokens,
+		Think:     &noThink,
 		Options:   map[string]any{"num_ctx": numCtx},
 	}
 

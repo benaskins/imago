@@ -18,6 +18,72 @@ func newToolContext() *tool.ToolContext {
 }
 
 // ---------------------------------------------------------------------------
+// repo_overview
+// ---------------------------------------------------------------------------
+
+func TestRepoOverview(t *testing.T) {
+	// Create a temp repo with a README
+	tmp := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tmp
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	os.WriteFile(filepath.Join(tmp, "README.md"), []byte("# Test Repo\n\nA test."), 0o644)
+	os.Mkdir(filepath.Join(tmp, "cmd"), 0o755)
+	os.WriteFile(filepath.Join(tmp, "cmd", "main.go"), []byte("package main"), 0o644)
+
+	// Make a commit so git log works
+	exec.Command("git", "-C", tmp, "add", ".").Run()
+	exec.Command("git", "-C", tmp, "commit", "-m", "init").Run()
+
+	td := RepoOverview()
+	result := td.Execute(newToolContext(), map[string]any{"dir": tmp})
+
+	if !strings.Contains(result.Content, "## Directory tree") {
+		t.Error("missing directory tree section")
+	}
+	if !strings.Contains(result.Content, "cmd/") {
+		t.Error("missing cmd dir in tree")
+	}
+	if !strings.Contains(result.Content, "## Recent commits") {
+		t.Error("missing commits section")
+	}
+	if !strings.Contains(result.Content, "init") {
+		t.Error("missing commit message")
+	}
+	if !strings.Contains(result.Content, "## README.md") {
+		t.Error("missing README section")
+	}
+	if !strings.Contains(result.Content, "# Test Repo") {
+		t.Error("missing README content")
+	}
+}
+
+func TestDirTree(t *testing.T) {
+	tmp := t.TempDir()
+	os.Mkdir(filepath.Join(tmp, "src"), 0o755)
+	os.WriteFile(filepath.Join(tmp, "src", "main.go"), []byte(""), 0o644)
+	os.Mkdir(filepath.Join(tmp, ".git"), 0o755) // should be filtered
+	os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644)
+
+	tree, err := dirTree(tmp, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tree, "src/") {
+		t.Error("missing src dir")
+	}
+	if !strings.Contains(tree, "main.go") {
+		t.Error("missing main.go")
+	}
+	if strings.Contains(tree, ".git") {
+		t.Error("should filter hidden dirs")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // read_file
 // ---------------------------------------------------------------------------
 
@@ -246,6 +312,7 @@ func TestAll(t *testing.T) {
 	m := All(cfg)
 
 	expected := []string{
+		"repo_overview",
 		"read_file", "git_log", "read_post", "list_posts",
 		"fetch_page", "search",
 		"aurelia_status", "aurelia_show", "lamina",

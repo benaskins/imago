@@ -36,6 +36,7 @@ type Config struct {
 func All(cfg Config) map[string]tool.ToolDef {
 	m := make(map[string]tool.ToolDef)
 	for _, td := range []tool.ToolDef{
+		RepoOverview(),
 		ReadFile(),
 		GitLog(),
 		ReadPost(cfg.SiteDir),
@@ -52,6 +53,116 @@ func All(cfg Config) map[string]tool.ToolDef {
 		m[td.Name] = td
 	}
 	return m
+}
+
+// ---------------------------------------------------------------------------
+// Repository exploration
+// ---------------------------------------------------------------------------
+
+// RepoOverview returns a tool that gives a full overview of a repository
+// in a single call: directory tree, recent commits, and key docs.
+func RepoOverview() tool.ToolDef {
+	return tool.ToolDef{
+		Name:        "repo_overview",
+		Description: "Get a full overview of a repository in one call. Returns directory tree (2 levels deep), last 10 commits, and contents of key docs (README.md, CLAUDE.md, AGENTS.md). Use this instead of multiple list_dir/read_file/git_log calls when exploring a new repo.",
+		Parameters: tool.ParameterSchema{
+			Type:     "object",
+			Required: []string{"dir"},
+			Properties: map[string]tool.PropertySchema{
+				"dir": {
+					Type:        "string",
+					Description: "Path to the repository root directory.",
+				},
+			},
+		},
+		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
+			dir, _ := args["dir"].(string)
+			if dir == "" {
+				return tool.ToolResult{Content: "Error: dir is required."}
+			}
+
+			var sb strings.Builder
+
+			// Directory tree (2 levels)
+			sb.WriteString("## Directory tree\n\n")
+			if tree, err := dirTree(dir, 2, ""); err == nil {
+				sb.WriteString(tree)
+			} else {
+				sb.WriteString(fmt.Sprintf("Error: %v\n", err))
+			}
+
+			// Recent commits
+			sb.WriteString("\n## Recent commits\n\n")
+			cmd := exec.CommandContext(ctx.Ctx, "git", "log", "--oneline", "-10")
+			cmd.Dir = dir
+			if out, err := cmd.CombinedOutput(); err == nil {
+				sb.WriteString(string(out))
+			} else {
+				sb.WriteString("(not a git repository or git error)\n")
+			}
+
+			// Key documentation files
+			keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
+			for _, name := range keyDocs {
+				path := filepath.Join(dir, name)
+				if data, err := os.ReadFile(path); err == nil {
+					sb.WriteString(fmt.Sprintf("\n## %s\n\n", name))
+					content := string(data)
+					// Truncate very long docs
+					if len(content) > 3000 {
+						content = content[:3000] + "\n\n... (truncated)"
+					}
+					sb.WriteString(content)
+					sb.WriteString("\n")
+				}
+			}
+
+			return tool.ToolResult{Content: sb.String()}
+		},
+	}
+}
+
+// dirTree builds a text representation of a directory tree up to maxDepth.
+func dirTree(root string, maxDepth int, prefix string) (string, error) {
+	if maxDepth < 0 {
+		return "", nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", err
+	}
+
+	var sb strings.Builder
+	// Filter out hidden dirs and common noise
+	var visible []os.DirEntry
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" {
+			continue
+		}
+		visible = append(visible, e)
+	}
+
+	for i, e := range visible {
+		connector := "├── "
+		childPrefix := prefix + "│   "
+		if i == len(visible)-1 {
+			connector = "└── "
+			childPrefix = prefix + "    "
+		}
+
+		if e.IsDir() {
+			sb.WriteString(prefix + connector + e.Name() + "/\n")
+			if maxDepth > 0 {
+				child, _ := dirTree(filepath.Join(root, e.Name()), maxDepth-1, childPrefix)
+				sb.WriteString(child)
+			}
+		} else {
+			sb.WriteString(prefix + connector + e.Name() + "\n")
+		}
+	}
+
+	return sb.String(), nil
 }
 
 // ---------------------------------------------------------------------------
