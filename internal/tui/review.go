@@ -32,7 +32,7 @@ func (m Model) transitionToReview() (tea.Model, tea.Cmd) {
 	m.draftError = ""
 
 	m.input.Reset()
-	m.input.Placeholder = "type feedback or 'done' to finish..."
+	m.input.Placeholder = "type feedback or /done to finish..."
 	m.input.Focus()
 
 	slog.Info("entering final review", "article_length", len(m.finalMarkdown))
@@ -58,7 +58,7 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.input.Reset()
 
-			if text == "done" {
+			if text == "/done" {
 				slog.Info("final review complete")
 				if m.session != nil {
 					m.session.MarkComplete()
@@ -251,7 +251,7 @@ func (m *Model) refreshReviewViewport() {
 
 func (m Model) viewReview() string {
 	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("type feedback | 'done' to finish | ctrl+c quit") + "  " + model
+	status := statusStyle.Render("type feedback | /done to finish | ctrl+c quit") + "  " + model
 	if m.waiting {
 		status = statusStyle.Render("thinking...") + "  " + model
 	}

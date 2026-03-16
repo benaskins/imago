@@ -78,7 +78,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Handle section approval
-			if text == "k" || text == "keep" || text == "/keep" || text == "/k" {
+			if text == "/keep" || text == "/k" {
 				slog.Info("section approved", "section", m.sectionIndex+1, "total", len(m.sections))
 				m.approved[m.sectionIndex] = true
 				m.sectionIndex++
