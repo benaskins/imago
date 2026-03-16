@@ -37,6 +37,10 @@ const (
 	// DraftNumCtx is the Ollama context window for the draft phase.
 	// Larger to fit the full interview transcript for synthesis.
 	DraftNumCtx = 16384
+
+	// InterviewNumPredict caps total output (thinking + content) per turn.
+	// Keeps thinking brief while leaving room for the response.
+	InterviewNumPredict = 2048
 )
 
 // SystemPromptTemplate is the interview phase system prompt.
