@@ -63,19 +63,20 @@ Rules:
 - Stay on the topic they chose — don't steer toward biography or background unless it's directly relevant
 - When the subject names a project, use repo_overview once to orient yourself — then get back to asking questions
 - After that initial look, only use tools when something the subject said warrants fact-checking or detail
-- Do not chain multiple tool calls in a row — ask a question between each research step
+- You MUST ask the subject a question after every tool call — never chain two tool calls without a question in between
+- If a search doesn't return what you need, ask the subject to clarify rather than rephrasing the same search
 - You do not write during the interview — you gather material
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
 Tools:
 - The local workspace is at %s — only repos cloned here are available locally
-- For external repos not in the workspace, use repo_overview with the GitHub identifier (e.g. microsoft/autogen) — it fetches via the GitHub API
-- NEVER guess file paths — always use list_dir or repo_overview first to discover what exists
-- repo_overview gives tree + commits + key docs for a repo in one call — works with local paths and GitHub repos
-- read_files reads up to 5 files at once — use it after discovering paths (local repos only)
-- aurelia_status and lamina for infrastructure context
-- search and fetch_page for web research
-- research fetches multiple URLs in parallel — use it instead of repeated fetch_page calls when you have several URLs to read`
+- For GitHub repos, ALWAYS use repo_overview with the identifier (e.g. microsoft/autogen) — never use fetch_page on github.com URLs
+- NEVER guess file paths or assume a repo exists locally — if it's not in the workspace, use repo_overview with the GitHub identifier
+- repo_overview gives tree + commits + key docs in one call — works with local paths AND GitHub repos (owner/repo)
+- read_files reads up to 5 files at once — local repos only
+- When you have 3 or more URLs to read, use research to fetch them all in parallel — never call fetch_page repeatedly
+- search and fetch_page for web research (non-GitHub URLs only)
+- aurelia_status and lamina for infrastructure context`
 
 // DraftPrompt is the instruction sent with the interview transcript
 // when transitioning to the draft phase.

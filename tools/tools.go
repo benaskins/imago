@@ -68,9 +68,24 @@ func All(cfg Config) map[string]tool.ToolDef {
 
 	m := make(map[string]tool.ToolDef)
 	for _, td := range defs {
-		m[td.Name] = td
+		m[td.Name] = withResultLogging(td)
 	}
 	return m
+}
+
+// withResultLogging wraps a tool's Execute to log result length and errors.
+func withResultLogging(td tool.ToolDef) tool.ToolDef {
+	original := td.Execute
+	td.Execute = func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
+		result := original(ctx, args)
+		if strings.HasPrefix(result.Content, "Error") {
+			slog.Warn("tool result", "tool", td.Name, "error", result.Content)
+		} else {
+			slog.Info("tool result", "tool", td.Name, "length", len(result.Content))
+		}
+		return result
+	}
+	return td
 }
 
 // ---------------------------------------------------------------------------
