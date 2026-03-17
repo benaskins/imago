@@ -38,11 +38,11 @@ type Config struct {
 
 // All returns the complete tool map for imago, keyed by tool name.
 func All(cfg Config) map[string]tool.ToolDef {
+	// Only route fetch_page through the wire proxy — it fetches from the
+	// internet. SearXNG and other local services stay on direct HTTP.
 	var fetchOpts []tool.PageFetcherOption
-	var searxOpts []tool.SearXNGOption
 	if cfg.HTTPClient != nil {
 		fetchOpts = append(fetchOpts, tool.WithHTTPClient(cfg.HTTPClient))
-		searxOpts = append(searxOpts, tool.WithSearXNGHTTPClient(cfg.HTTPClient))
 	}
 
 	defs := []tool.ToolDef{
@@ -53,7 +53,7 @@ func All(cfg Config) map[string]tool.ToolDef {
 		ReadPost(cfg.SiteDir),
 		ListPosts(cfg.SiteDir),
 		FetchPage(fetchOpts...),
-		Search(cfg.SearXNGURL, searxOpts...),
+		Search(cfg.SearXNGURL),
 		AureliaStatus(),
 		AureliaShow(),
 		Lamina(),
