@@ -161,10 +161,10 @@ func (m Model) sendReview() tea.Cmd {
 	messages = append(messages, m.reviewHistory...)
 
 	req := &loop.Request{
-		Model:    config.DraftModel,
+		Model:    m.mcfg.DraftModel,
 		Messages: messages,
 		Stream:   true,
-		Options:  map[string]any{"num_ctx": config.DraftNumCtx},
+		Options:  copyMap(m.mcfg.DraftOptions),
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)

@@ -18,37 +18,70 @@ func SystemPrompt() string {
 	return fmt.Sprintf(SystemPromptTemplate, date, dev)
 }
 
+// Provider identifies the LLM backend.
+type Provider string
+
 const (
-	// InterviewModel is the LLM used during the interview phase.
-	InterviewModel = "qwen3:32b"
-
-	// DraftModel is the LLM used during the draft phase.
-	DraftModel = "qwen3:32b"
-
-	// InterviewMaxTokens is the context budget for the interview phase.
-	InterviewMaxTokens = 28000
-
-	// DraftMaxTokens is the context budget for the draft phase.
-	// Larger to accommodate the full interview transcript.
-	DraftMaxTokens = 28000
-
-	// InterviewNumCtx is the Ollama context window for the interview phase.
-	// Smaller window = less KV cache = higher tok/s.
-	InterviewNumCtx = 8192
-
-	// DraftNumCtx is the Ollama context window for the draft phase.
-	// Larger to fit the full interview transcript for synthesis.
-	DraftNumCtx = 16384
-
-	// InterviewNumPredict caps total output (thinking + content) per turn.
-	// Keeps thinking brief while leaving room for the response.
-	InterviewNumPredict = 2048
-
-	// RevisionNumPredict caps total output for section revision.
-	// Higher than interview — revisions output a full section — but
-	// still capped to keep the editing loop snappy.
-	RevisionNumPredict = 4096
+	ProviderOllama     Provider = "ollama"
+	ProviderCloudflare Provider = "cloudflare"
 )
+
+// ModelConfig holds model and inference settings for both providers.
+type ModelConfig struct {
+	Provider         Provider
+	InterviewModel   string
+	DraftModel       string
+	InterviewOptions map[string]any
+	DraftOptions     map[string]any
+	RevisionOptions  map[string]any
+	MaxTokens        int
+	DraftMaxTokens   int
+}
+
+// DefaultModelConfig returns the config for the active provider,
+// selected by whether Cloudflare env vars are set.
+func DefaultModelConfig() ModelConfig {
+	if os.Getenv("CLOUDFLARE_ACCOUNT_ID") != "" && os.Getenv("CLOUDFLARE_AXON_GATE_TOKEN") != "" {
+		return CloudflareModelConfig()
+	}
+	return OllamaModelConfig()
+}
+
+// OllamaModelConfig returns settings for local Ollama inference.
+func OllamaModelConfig() ModelConfig {
+	return ModelConfig{
+		Provider:       ProviderOllama,
+		InterviewModel: "qwen3:32b",
+		DraftModel:     "qwen3:32b",
+		InterviewOptions: map[string]any{
+			"num_ctx":     8192,
+			"num_predict": 2048,
+		},
+		DraftOptions: map[string]any{
+			"num_ctx": 16384,
+		},
+		RevisionOptions: map[string]any{
+			"num_ctx":     16384,
+			"num_predict": 4096,
+		},
+		MaxTokens:      28000,
+		DraftMaxTokens: 28000,
+	}
+}
+
+// CloudflareModelConfig returns settings for Cloudflare Workers AI.
+func CloudflareModelConfig() ModelConfig {
+	return ModelConfig{
+		Provider:         ProviderCloudflare,
+		InterviewModel:   "@cf/qwen/qwen3-30b-a3b-fp8",
+		DraftModel:       "@cf/qwen/qwen3-30b-a3b-fp8",
+		InterviewOptions: map[string]any{"max_tokens": 2048},
+		DraftOptions:     map[string]any{"max_tokens": 4096},
+		RevisionOptions:  map[string]any{"max_tokens": 4096},
+		MaxTokens:        28000,
+		DraftMaxTokens:   28000,
+	}
+}
 
 // SystemPromptTemplate is the interview phase system prompt.
 // %s placeholder: workspace root directory ($DEV).

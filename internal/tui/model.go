@@ -69,6 +69,7 @@ type Model struct {
 
 	// LLM
 	client   loop.LLMClient
+	mcfg     config.ModelConfig
 	tools    map[string]tool.ToolDef
 	messages []loop.Message // full conversation history
 
@@ -93,7 +94,7 @@ type Model struct {
 }
 
 // New creates a new Model with the given LLM client and tools.
-func New(client loop.LLMClient, tools map[string]tool.ToolDef, sess *session.State) Model {
+func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *session.State) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type your response..."
 	ta.Focus()
@@ -105,6 +106,7 @@ func New(client loop.LLMClient, tools map[string]tool.ToolDef, sess *session.Sta
 	m := Model{
 		phase:   phaseInterview,
 		client:  client,
+		mcfg:    mcfg,
 		tools:   tools,
 		input:   ta,
 		session: sess,
@@ -155,7 +157,7 @@ func New(client loop.LLMClient, tools map[string]tool.ToolDef, sess *session.Sta
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		textarea.Blink,
-		m.startLLM(config.InterviewModel),
+		m.startLLM(m.mcfg.InterviewModel),
 	)
 }
 
@@ -221,7 +223,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.saveSession()
 			m.refreshViewport()
 
-			return m, m.startLLM(config.InterviewModel)
+			return m, m.startLLM(m.mcfg.InterviewModel)
 		case "tab":
 			m.toggleLastToolEntry()
 			m.refreshViewport()
@@ -373,9 +375,9 @@ func (m *Model) toggleLastToolEntry() {
 func (m Model) currentModel() string {
 	switch m.phase {
 	case phaseDraft, phaseReview:
-		return config.DraftModel
+		return m.mcfg.DraftModel
 	default:
-		return config.InterviewModel
+		return m.mcfg.InterviewModel
 	}
 }
 
@@ -397,11 +399,11 @@ func (m Model) viewInterview() string {
 // startLLM launches the LLM via loop.Stream and returns a command that
 // reads events from the channel.
 func (m Model) startLLM(modelName string) tea.Cmd {
-	maxTokens := config.InterviewMaxTokens
-	numCtx := config.InterviewNumCtx
+	maxTokens := m.mcfg.MaxTokens
+	opts := copyMap(m.mcfg.InterviewOptions)
 	if m.phase == phaseDraft {
-		maxTokens = config.DraftMaxTokens
-		numCtx = config.DraftNumCtx
+		maxTokens = m.mcfg.DraftMaxTokens
+		opts = copyMap(m.mcfg.DraftOptions)
 	}
 
 	req := &loop.Request{
@@ -409,7 +411,7 @@ func (m Model) startLLM(modelName string) tea.Cmd {
 		Messages:  m.messages,
 		Stream:    true,
 		MaxTokens: maxTokens,
-		Options:   map[string]any{"num_ctx": numCtx, "num_predict": config.InterviewNumPredict},
+		Options:   opts,
 	}
 
 	if len(m.tools) > 0 {
@@ -476,4 +478,12 @@ func waitForEvent(ch <-chan loop.Event) tea.Cmd {
 		}
 		return streamTickMsg{event: se, ch: ch}
 	}
+}
+
+func copyMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }

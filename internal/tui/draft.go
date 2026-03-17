@@ -29,7 +29,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	m.input.Placeholder = "/keep to approve, or type feedback..."
 	m.input.Focus()
 
-	slog.Info("draft generation starting", "model", config.DraftModel, "num_ctx", config.DraftNumCtx, "messages", len(m.messages))
+	slog.Info("draft generation starting", "model", m.mcfg.DraftModel, "provider", m.mcfg.Provider, "messages", len(m.messages))
 
 	// Build the draft request: full transcript + draft prompt
 	draftMessages := make([]loop.Message, len(m.messages))
@@ -42,11 +42,11 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	m.messages = draftMessages
 
 	req := &loop.Request{
-		Model:     config.DraftModel,
+		Model:     m.mcfg.DraftModel,
 		Messages:  draftMessages,
 		Stream:    true,
-		MaxTokens: config.DraftMaxTokens,
-		Options:   map[string]any{"num_ctx": config.DraftNumCtx},
+		MaxTokens: m.mcfg.DraftMaxTokens,
+		Options:   copyMap(m.mcfg.DraftOptions),
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
@@ -264,10 +264,10 @@ func (m Model) reviseSection() tea.Cmd {
 	messages = append(messages, m.sectionHistory[idx]...)
 
 	req := &loop.Request{
-		Model:    config.DraftModel,
+		Model:    m.mcfg.DraftModel,
 		Messages: messages,
 		Stream:   true,
-		Options:  map[string]any{"num_ctx": config.DraftNumCtx, "num_predict": config.RevisionNumPredict},
+		Options:  copyMap(m.mcfg.RevisionOptions),
 	}
 
 	ch := loop.Stream(context.Background(), m.client, req, nil, nil)

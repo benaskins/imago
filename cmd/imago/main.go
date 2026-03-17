@@ -13,6 +13,7 @@ import (
 	"github.com/benaskins/axon-talk/ollama"
 	"github.com/benaskins/axon-wire"
 
+	"github.com/benaskins/imago/internal/config"
 	"github.com/benaskins/imago/internal/logging"
 	"github.com/benaskins/imago/internal/session"
 	"github.com/benaskins/imago/internal/tui"
@@ -63,7 +64,10 @@ func main() {
 		}
 	}
 
-	model := tui.New(client, allTools, sess)
+	mcfg := config.DefaultModelConfig()
+	slog.Info("model config", "provider", mcfg.Provider, "interview", mcfg.InterviewModel, "draft", mcfg.DraftModel)
+
+	model := tui.New(client, mcfg, allTools, sess)
 
 	p := tea.NewProgram(
 		model,
