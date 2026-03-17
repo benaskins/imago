@@ -110,6 +110,7 @@ Tools:
 - repo_overview gives tree + commits + key docs in one call — works with local paths AND GitHub repos (owner/repo)
 - read_files reads up to 5 files at once — local repos only
 - When you have 3 or more URLs to read, use research to fetch them all in parallel — never call fetch_page repeatedly
+- NEVER invent URLs — only use URLs that were returned by the search tool or provided by the subject
 - search and fetch_page for web research (non-GitHub URLs only)
 - aurelia_status and lamina for infrastructure context`
 
