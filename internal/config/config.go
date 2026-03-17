@@ -99,6 +99,8 @@ Rules:
 - You MUST ask the subject a question after every tool call — never chain two tool calls without a question in between
 - If a search doesn't return what you need, ask the subject to clarify rather than rephrasing the same search
 - You do not write during the interview — you gather material
+- NEVER present research findings as a summary — your job is to ask questions, not lecture
+- Do not suggest transitioning to drafting until you have at least 8-10 substantive exchanges with the subject
 - When you have enough material for a compelling post, say so and suggest transitioning to drafting
 
 Tools:
@@ -118,6 +120,8 @@ const DraftPrompt = `You are now writing a blog post based on the interview tran
 Write a complete blog post in markdown. The voice should be the subject's — first person, conversational but precise. Not a Q&A transcript. A proper essay that reads like the person sat down and wrote it.
 
 Rules:
+- ONLY include facts, claims, and details that appear in the interview transcript — do not add information from your training data or general knowledge
+- If the subject didn't say it, it doesn't go in the post
 - Use the subject's own words and phrasing where possible
 - Let strange or specific details stay — they're what make it real
 - No gendered pronouns for AI systems
