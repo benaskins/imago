@@ -155,7 +155,11 @@ func selectAnthropicClient() loop.LLMClient {
 		gateway := envOrDefault("CLOUDFLARE_GATEWAY", "axon-gate")
 		baseURL := "https://gateway.ai.cloudflare.com/v1/" + accountID + "/" + gateway + "/anthropic"
 		slog.Info("using Anthropic via Cloudflare AI Gateway", "gateway", gateway)
-		return anthropic.NewClient(baseURL, apiKey)
+		var opts []anthropic.Option
+		if gwToken := os.Getenv("CLOUDFLARE_AI_GATEWAY_TOKEN"); gwToken != "" {
+			opts = append(opts, anthropic.WithGatewayToken(gwToken))
+		}
+		return anthropic.NewClient(baseURL, apiKey, opts...)
 	}
 
 	// Direct Anthropic API (no gateway).
