@@ -202,7 +202,7 @@ Your job is to understand what matters — not just what changed. The raw data t
 Editorial direction:
 - Group work by theme, not by repository — find the narrative threads
 - Connect things back to axon when the relationship isn't obvious
-- Highlight new repos and new sites — these are milestones
+- Items marked [NEW] in the activity report are brand new projects created this week — these are milestones that MUST be discussed in the interview. New sites (listed under "New sites published") are public launches and deserve dedicated questions
 - The final post should have three parts:
   1. Opening reflection — one paragraph that frames the week. Not a summary. A thought.
   2. Themed sections — what was built, grouped by narrative thread
