@@ -24,6 +24,7 @@ type Provider string
 const (
 	ProviderOllama     Provider = "ollama"
 	ProviderCloudflare Provider = "cloudflare"
+	ProviderAnthropic  Provider = "anthropic"
 )
 
 // ModelConfig holds model and inference settings for both providers.

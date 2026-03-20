@@ -18,14 +18,16 @@ const sessionDir = ".local/share/imago/sessions"
 
 // State represents a persisted session.
 type State struct {
-	ID        string         `json:"id"`
-	Phase     string         `json:"phase"` // "interview" or "draft"
-	Messages  []loop.Message `json:"messages"`
-	Sections  []string       `json:"sections,omitempty"`
-	Approved  []bool         `json:"approved,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	Complete  bool           `json:"complete"`
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`  // "post" or "weekly"
+	Phase      string         `json:"phase"` // "interview" or "draft"
+	Messages   []loop.Message `json:"messages"`
+	Sections   []string       `json:"sections,omitempty"`
+	Approved   []bool         `json:"approved,omitempty"`
+	Collection string         `json:"collection,omitempty"` // raw collection report (weekly only)
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	Complete   bool           `json:"complete"`
 }
 
 func dir() string {
@@ -37,10 +39,14 @@ func pathFor(id string) string {
 }
 
 // New creates a new session with a timestamped ID.
-func New() *State {
+func New(kind string) *State {
+	if kind == "" {
+		kind = "post"
+	}
 	now := time.Now()
 	return &State{
 		ID:        now.Format("2006-01-02T15-04-05"),
+		Kind:      kind,
 		Phase:     "interview",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -73,8 +79,9 @@ func (s *State) MarkComplete() error {
 	return s.Save()
 }
 
-// FindIncomplete returns the most recent incomplete session, or nil.
-func FindIncomplete() *State {
+// FindIncomplete returns the most recent incomplete session matching
+// the given kind, or nil. Pass "" to match any kind.
+func FindIncomplete(kind string) *State {
 	entries, err := os.ReadDir(dir())
 	if err != nil {
 		return nil
@@ -100,7 +107,7 @@ func FindIncomplete() *State {
 			continue
 		}
 
-		if !s.Complete {
+		if !s.Complete && (kind == "" || s.Kind == kind) {
 			return &s
 		}
 	}

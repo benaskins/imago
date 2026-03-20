@@ -90,13 +90,27 @@ type Model struct {
 	reviewHistory []loop.Message // conversation about the full article
 	reviewEntries []chatEntry    // display entries for review conversation
 
+	// Prompt overrides
+	draftPrompt string // defaults to config.DraftPrompt
+
 	// Session persistence
-	session *session.State
+	session     *session.State
+	sessionKind string // "post" or "weekly"
 }
 
 // WithDraftClient sets a separate LLM client for draft/revision phases.
 func (m *Model) WithDraftClient(c loop.LLMClient) {
 	m.draftClient = c
+}
+
+// WithWeeklyMode configures the model for weekly update writing.
+// It replaces the system prompt, draft prompt, and sets the session kind.
+func (m *Model) WithWeeklyMode(systemPrompt string) {
+	m.sessionKind = "weekly"
+	m.draftPrompt = config.WeeklyDraftPrompt
+	if len(m.messages) > 0 && m.messages[0].Role == "system" {
+		m.messages[0].Content = systemPrompt
+	}
 }
 
 // draftLLMClient returns the client to use for draft/revision phases.
@@ -119,9 +133,10 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
 	m := Model{
-		phase:   phaseInterview,
-		client:  client,
-		mcfg:    mcfg,
+		phase:       phaseInterview,
+		client:      client,
+		mcfg:        mcfg,
+		draftPrompt: config.DraftPrompt,
 		tools:   tools,
 		input:   ta,
 		session: sess,
@@ -325,7 +340,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) saveSession() {
 	if m.session == nil {
-		m.session = session.New()
+		m.session = session.New(m.sessionKind)
 	}
 	m.session.Messages = m.messages
 	if m.phase == phaseDraft {

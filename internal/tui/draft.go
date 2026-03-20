@@ -36,7 +36,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	copy(draftMessages, m.messages)
 	draftMessages = append(draftMessages, loop.Message{
 		Role:    "user",
-		Content: config.DraftPrompt,
+		Content: m.draftPrompt,
 	})
 
 	m.messages = draftMessages
@@ -232,7 +232,7 @@ func (m Model) interviewTranscript() string {
 			continue
 		case "user":
 			// Skip the draft prompt (last user message)
-			if msg.Content == config.DraftPrompt {
+			if msg.Content == m.draftPrompt {
 				continue
 			}
 			sb.WriteString("**Author:** ")

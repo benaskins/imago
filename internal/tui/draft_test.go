@@ -34,6 +34,7 @@ func TestAssembleDraft(t *testing.T) {
 
 func TestInterviewTranscript(t *testing.T) {
 	m := Model{
+		draftPrompt: config.DraftPrompt,
 		messages: []loop.Message{
 			{Role: "system", Content: config.SystemPrompt()},
 			{Role: "assistant", Content: "What do you want to write about?"},
