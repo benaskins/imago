@@ -167,7 +167,7 @@ func (m Model) sendReview() tea.Cmd {
 		Options:  copyMap(m.mcfg.DraftOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
+	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
 
 	return func() tea.Msg {
 		var content strings.Builder

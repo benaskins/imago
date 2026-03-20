@@ -31,6 +31,7 @@ type ModelConfig struct {
 	Provider         Provider
 	InterviewModel   string
 	DraftModel       string
+	DraftProvider    Provider // if set, draft/revision phases use a different provider
 	InterviewOptions map[string]any
 	DraftOptions     map[string]any
 	RevisionOptions  map[string]any

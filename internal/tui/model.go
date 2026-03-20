@@ -68,10 +68,11 @@ type Model struct {
 	ready    bool
 
 	// LLM
-	client   loop.LLMClient
-	mcfg     config.ModelConfig
-	tools    map[string]tool.ToolDef
-	messages []loop.Message // full conversation history
+	client      loop.LLMClient
+	draftClient loop.LLMClient // optional: separate client for draft/revision phases
+	mcfg        config.ModelConfig
+	tools       map[string]tool.ToolDef
+	messages    []loop.Message // full conversation history
 
 	// Draft state
 	sections        []string           // markdown sections of the draft
@@ -91,6 +92,20 @@ type Model struct {
 
 	// Session persistence
 	session *session.State
+}
+
+// WithDraftClient sets a separate LLM client for draft/revision phases.
+func (m *Model) WithDraftClient(c loop.LLMClient) {
+	m.draftClient = c
+}
+
+// draftLLMClient returns the client to use for draft/revision phases.
+// Falls back to the interview client if no draft client is set.
+func (m *Model) draftLLMClient() loop.LLMClient {
+	if m.draftClient != nil {
+		return m.draftClient
+	}
+	return m.client
 }
 
 // New creates a new Model with the given LLM client and tools.

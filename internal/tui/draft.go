@@ -49,7 +49,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 		Options:   copyMap(m.mcfg.DraftOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
+	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
 	return m, waitForEvent(ch)
 }
 
@@ -270,7 +270,7 @@ func (m Model) reviseSection() tea.Cmd {
 		Options:  copyMap(m.mcfg.RevisionOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.client, req, nil, nil)
+	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
 
 	// Collect the full response then return as sectionReviseMsg
 	return func() tea.Msg {
