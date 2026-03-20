@@ -129,7 +129,11 @@ func selectLLMClient() loop.LLMClient {
 	if accountID != "" && token != "" {
 		baseURL := "https://gateway.ai.cloudflare.com/v1/" + accountID + "/axon-gate/workers-ai"
 		slog.Info("using Cloudflare Workers AI", "gateway", "axon-gate")
-		return cf.NewClient(baseURL, token)
+		var opts []cf.Option
+		if gwToken := os.Getenv("CLOUDFLARE_AI_GATEWAY_TOKEN"); gwToken != "" {
+			opts = append(opts, cf.WithGatewayToken(gwToken))
+		}
+		return cf.NewClient(baseURL, token, opts...)
 	}
 
 	client, err := ollama.NewClientFromEnvironment()
