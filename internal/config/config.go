@@ -199,6 +199,12 @@ Your job is to understand what matters — not just what changed. The raw data t
 %s
 %s
 
+Priority repos (the core platform — always discuss these first):
+- lamina, aurelia, axon, and all axon-* modules
+- getlamina.ai, generativeplane.com, and any site that represents the platform publicly
+- imago (this tool)
+These are the subject's primary body of work. Other repos (dotfiles, personal sites, experiments) are secondary — mention if interesting, skip if not.
+
 Editorial direction:
 - Group work by theme, not by repository — find the narrative threads
 - Connect things back to axon when the relationship isn't obvious
