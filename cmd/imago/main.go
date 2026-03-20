@@ -33,8 +33,19 @@ func main() {
 	// Determine mode from subcommand.
 	weekly := len(os.Args) > 1 && os.Args[1] == "weekly"
 
-	// Select LLM client: Cloudflare if configured, otherwise Ollama.
-	client := selectLLMClient()
+	// Select LLM client.
+	var client loop.LLMClient
+	if weekly {
+		// Weekly mode: use Opus for the entire flow.
+		client = selectAnthropicClient()
+		if client == nil {
+			fmt.Fprintf(os.Stderr, "weekly mode requires Anthropic credentials (CLOUDFLARE_AI_GATEWAY_TOKEN + CLOUDFLARE_ACCOUNT_ID, or ANTHROPIC_API_KEY)\n")
+			os.Exit(1)
+		}
+	} else {
+		// Regular mode: Cloudflare Workers AI or Ollama.
+		client = selectLLMClient()
+	}
 
 	// Build HTTP client — routes through wire proxy if AXON_WIRE_URL is set.
 	httpClient := wire.NewClient()
@@ -74,6 +85,19 @@ func main() {
 	}
 
 	mcfg := config.DefaultModelConfig()
+
+	if weekly {
+		// Weekly mode: Opus for everything.
+		opusModel := envOrDefault("IMAGO_DRAFT_MODEL", "claude-opus-4-6")
+		mcfg.Provider = config.ProviderAnthropic
+		mcfg.DraftProvider = config.ProviderAnthropic
+		mcfg.InterviewModel = opusModel
+		mcfg.DraftModel = opusModel
+		mcfg.InterviewOptions = map[string]any{"max_tokens": 4096}
+		mcfg.DraftOptions = map[string]any{"max_tokens": 8192}
+		mcfg.RevisionOptions = map[string]any{"max_tokens": 8192}
+	}
+
 	slog.Info("model config", "provider", mcfg.Provider, "interview", mcfg.InterviewModel, "draft", mcfg.DraftModel)
 
 	model := tui.New(client, mcfg, allTools, sess)
@@ -96,16 +120,7 @@ func main() {
 		systemPrompt := config.WeeklySystemPrompt(report.Markdown, previousWeekly)
 		model.WithWeeklyMode(systemPrompt)
 
-		// Set up Claude Opus as the draft client via Cloudflare AI Gateway.
-		if draftClient := selectAnthropicClient(); draftClient != nil {
-			model.WithDraftClient(draftClient)
-			mcfg.DraftModel = envOrDefault("IMAGO_DRAFT_MODEL", "claude-opus-4-6")
-			mcfg.DraftProvider = config.ProviderAnthropic
-			mcfg.DraftOptions = map[string]any{"max_tokens": 4096}
-			slog.Info("weekly mode", "draft_provider", "anthropic", "draft_model", mcfg.DraftModel)
-		} else {
-			slog.Warn("ANTHROPIC_API_KEY not set — weekly draft will use interview model")
-		}
+		slog.Info("weekly mode", "model", mcfg.InterviewModel)
 	}
 
 	p := tea.NewProgram(
