@@ -250,4 +250,11 @@ Rules:
 - Use the subject's own words and phrasing where possible
 - Connect work back to axon when the relationship exists but isn't obvious
 - Highlight new repos and new sites as milestones
-- Start with a # title heading on the first line (format: "Week notes: [date range]")`
+- Start with a # title heading on the first line (format: "Week notes: [date range]")
+
+Linking — this is internet native content, link generously:
+- Every GitHub repo mentioned should link to it: [axon-synd](https://github.com/benaskins/axon-synd)
+- Every site mentioned should link to it: [getlamina.ai](https://getlamina.ai)
+- External tools and projects should link to their homepages
+- Link on first mention of each thing, not every mention
+- Use inline markdown links, not reference-style`
