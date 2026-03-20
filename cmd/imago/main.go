@@ -142,29 +142,28 @@ func selectLLMClient() loop.LLMClient {
 }
 
 // selectAnthropicClient returns a Claude client via Cloudflare AI Gateway,
-// or nil if the required env vars are not set.
+// or nil if the required env vars are not set. The Anthropic API key is
+// optional — the gateway can hold it server-side.
 func selectAnthropicClient() loop.LLMClient {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
+	gwToken := os.Getenv("CLOUDFLARE_AI_GATEWAY_TOKEN")
 
-	if apiKey == "" {
-		return nil
-	}
-
-	if accountID != "" {
+	if accountID != "" && gwToken != "" {
 		gateway := envOrDefault("CLOUDFLARE_GATEWAY", "axon-gate")
 		baseURL := "https://gateway.ai.cloudflare.com/v1/" + accountID + "/" + gateway + "/anthropic"
 		slog.Info("using Anthropic via Cloudflare AI Gateway", "gateway", gateway)
-		var opts []anthropic.Option
-		if gwToken := os.Getenv("CLOUDFLARE_AI_GATEWAY_TOKEN"); gwToken != "" {
-			opts = append(opts, anthropic.WithGatewayToken(gwToken))
-		}
-		return anthropic.NewClient(baseURL, apiKey, opts...)
+		return anthropic.NewClient(baseURL, apiKey,
+			anthropic.WithGatewayToken(gwToken))
 	}
 
-	// Direct Anthropic API (no gateway).
-	slog.Info("using Anthropic API directly")
-	return anthropic.NewClient("https://api.anthropic.com", apiKey)
+	if apiKey != "" {
+		// Direct Anthropic API (no gateway).
+		slog.Info("using Anthropic API directly")
+		return anthropic.NewClient("https://api.anthropic.com", apiKey)
+	}
+
+	return nil
 }
 
 func envOrDefault(key, fallback string) string {
