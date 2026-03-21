@@ -254,10 +254,13 @@ func discoverRepos(root string) ([]string, error) {
 
 		if d.IsDir() && d.Name() == ".git" {
 			repos = append(repos, filepath.Dir(path))
+			// Don't descend into .git, but DO continue walking
+			// sibling directories — parent repos (like ~/dev/sites)
+			// may contain child repos (like ~/dev/sites/getlamina.ai).
 			return filepath.SkipDir
 		}
 
-		// Don't descend into .git directories.
+		// Don't descend into node_modules.
 		if d.IsDir() && d.Name() == "node_modules" {
 			return filepath.SkipDir
 		}
