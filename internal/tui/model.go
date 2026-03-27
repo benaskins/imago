@@ -43,9 +43,8 @@ type Model struct {
 	tools       map[string]tool.ToolDef
 
 	// Draft state
-	sections        []string
-	rendered        []string // glamour-rendered sections
-	sectionIndex    int
+	sections     []string
+	sectionIndex int
 	approved        []bool
 	finalMarkdown   string
 	draftError      string

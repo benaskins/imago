@@ -30,11 +30,12 @@ tools/tools.go          15 axon-tool definitions (repo_overview, search, fetch_p
 
 ## Key dependencies
 
+- axon-face (reusable Bubble Tea chat component: entries, streaming, session, styles)
 - axon-loop (conversation loop + streaming + tool dispatch)
 - axon-talk (Ollama, Cloudflare Workers AI, Anthropic adapters)
 - axon-tool (tool definitions, PageFetcher)
 - axon-wire (HTTP client routing through wire proxy)
-- bubbletea, lipgloss, glamour, bubbles (TUI)
+- bubbletea, lipgloss, bubbles (TUI)
 
 All axon modules use local `replace` directives to `/Users/benaskins/dev/lamina/`.
 

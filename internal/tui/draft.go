@@ -6,25 +6,12 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss"
-
 	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
 
 	"github.com/benaskins/imago/internal/config"
 
 	tea "github.com/charmbracelet/bubbletea"
-)
-
-// Draft-specific styles not provided by face.Styles.
-var (
-	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	pendingStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	sectionBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("8")).
-				Padding(1, 2)
 )
 
 // transitionToDraft switches from interview to draft phase.
@@ -183,7 +170,6 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update the section with the agent's response
 		m.sections[idx] = msg.content
-		m.rendered[idx] = renderMarkdown(msg.content, m.Width)
 		m.Waiting = false
 		m.saveSession()
 		m.showCurrentSection()
@@ -203,12 +189,8 @@ func (m *Model) parseSections(content string) {
 	}
 
 	m.approved = make([]bool, len(m.sections))
-	m.rendered = make([]string, len(m.sections))
 	m.sectionHistory = make([][]loop.Message, len(m.sections))
 	m.revisionEntries = make([][]face.Entry, len(m.sections))
-	for i, s := range m.sections {
-		m.rendered[i] = renderMarkdown(s, m.Width)
-	}
 	m.sectionIndex = 0
 }
 
@@ -374,20 +356,3 @@ func (m Model) viewDraft() string {
 	return m.Chat.View(status)
 }
 
-func renderMarkdown(md string, width int) string {
-	if width <= 0 {
-		width = 80
-	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width-8),
-	)
-	if err != nil {
-		return md
-	}
-	rendered, err := r.Render(md)
-	if err != nil {
-		return md
-	}
-	return rendered
-}
