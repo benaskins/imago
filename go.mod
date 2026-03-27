@@ -3,6 +3,7 @@ module github.com/benaskins/imago
 go 1.26.1
 
 require (
+	github.com/benaskins/axon-face v0.0.0-00010101000000-000000000000
 	github.com/benaskins/axon-loop v0.7.0
 	github.com/benaskins/axon-talk v0.5.0
 	github.com/benaskins/axon-tool v0.1.6

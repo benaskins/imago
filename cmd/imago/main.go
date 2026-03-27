@@ -14,16 +14,18 @@ import (
 	"github.com/benaskins/axon-talk/ollama"
 	"github.com/benaskins/axon-wire"
 
+	face "github.com/benaskins/axon-face"
+
 	"github.com/benaskins/imago/internal/collect"
 	"github.com/benaskins/imago/internal/config"
-	"github.com/benaskins/imago/internal/logging"
 	"github.com/benaskins/imago/internal/session"
 	"github.com/benaskins/imago/internal/tui"
 	"github.com/benaskins/imago/tools"
 )
 
 func main() {
-	cleanup, err := logging.Setup()
+	home, _ := os.UserHomeDir()
+	cleanup, err := face.SetupLogging(home + "/.local/share/imago/logs")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: logging setup failed: %v\n", err)
 	} else {
