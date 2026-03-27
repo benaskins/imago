@@ -61,7 +61,7 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "/done" {
 				slog.Info("final review complete")
 				if m.session != nil {
-					m.session.MarkComplete()
+					m.session.MarkComplete(m.sessionDir)
 				}
 				path, err := writeDraft(m.finalMarkdown)
 				if err != nil {

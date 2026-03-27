@@ -18,7 +18,6 @@ import (
 
 	"github.com/benaskins/imago/internal/collect"
 	"github.com/benaskins/imago/internal/config"
-	"github.com/benaskins/imago/internal/session"
 	"github.com/benaskins/imago/internal/tui"
 	"github.com/benaskins/imago/tools"
 )
@@ -72,17 +71,21 @@ func main() {
 	allTools := tools.All(cfg)
 
 	// Check for incomplete session (filtered by kind).
+	sessionDir := home + "/.local/share/imago/sessions"
 	sessionKind := "post"
 	if weekly {
 		sessionKind = "weekly"
 	}
-	var sess *session.State
-	if prev := session.FindIncomplete(sessionKind); prev != nil {
-		fmt.Printf("Found incomplete %s session from %s. Resume? (y/n) ", sessionKind, prev.UpdatedAt.Format("Jan 2 15:04"))
-		var answer string
-		fmt.Scanln(&answer)
-		if answer == "y" || answer == "yes" {
-			sess = prev
+	var sess *face.Session
+	if prev := face.FindIncomplete(sessionDir); prev != nil {
+		prevKind, _ := prev.State["kind"].(string)
+		if prevKind == sessionKind {
+			fmt.Printf("Found incomplete %s session from %s. Resume? (y/n) ", sessionKind, prev.UpdatedAt.Format("Jan 2 15:04"))
+			var answer string
+			fmt.Scanln(&answer)
+			if answer == "y" || answer == "yes" {
+				sess = prev
+			}
 		}
 	}
 
@@ -102,7 +105,7 @@ func main() {
 
 	slog.Info("model config", "provider", mcfg.Provider, "interview", mcfg.InterviewModel, "draft", mcfg.DraftModel)
 
-	model := tui.New(client, mcfg, allTools, sess)
+	model := tui.New(client, mcfg, allTools, sess, sessionDir)
 
 	if weekly {
 		// Run collection pass.

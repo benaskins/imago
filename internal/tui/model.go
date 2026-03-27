@@ -12,11 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
 	tool "github.com/benaskins/axon-tool"
 
 	"github.com/benaskins/imago/internal/config"
-	"github.com/benaskins/imago/internal/session"
 )
 
 // phase represents the current application phase.
@@ -94,7 +94,8 @@ type Model struct {
 	draftPrompt string // defaults to config.DraftPrompt
 
 	// Session persistence
-	session     *session.State
+	session     *face.Session
+	sessionDir  string
 	sessionKind string // "post" or "weekly"
 }
 
@@ -123,7 +124,7 @@ func (m *Model) draftLLMClient() loop.LLMClient {
 }
 
 // New creates a new Model with the given LLM client and tools.
-func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *session.State) Model {
+func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir string) Model {
 	ta := textarea.New()
 	ta.Placeholder = "Type your response..."
 	ta.Focus()
@@ -137,9 +138,10 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 		client:      client,
 		mcfg:        mcfg,
 		draftPrompt: config.DraftPrompt,
-		tools:   tools,
-		input:   ta,
-		session: sess,
+		tools:      tools,
+		input:      ta,
+		session:    sess,
+		sessionDir: sessionDir,
 		messages: []loop.Message{
 			{Role: loop.RoleSystem, Content: config.SystemPrompt()},
 		},
@@ -152,30 +154,34 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 		// Rebuild entries from messages for display
 		for _, msg := range sess.Messages {
 			switch msg.Role {
-			case "user":
+			case loop.RoleUser:
 				m.entries = append(m.entries, chatEntry{role: "user", content: msg.Content})
-			case "assistant":
+			case loop.RoleAssistant:
 				m.entries = append(m.entries, chatEntry{role: "agent", content: msg.Content})
 			}
 		}
 
-		if sess.Phase == "draft" && len(sess.Sections) > 0 {
-			m.phase = phaseDraft
-			m.sections = sess.Sections
-			m.approved = sess.Approved
-			m.rendered = make([]string, len(sess.Sections))
-			for i, s := range sess.Sections {
-				m.rendered[i] = renderMarkdown(s, 80)
-			}
-			// Find first unapproved section
-			m.sectionIndex = len(sess.Sections)
-			for i, a := range sess.Approved {
-				if !a {
-					m.sectionIndex = i
-					break
+		if sess.Phase == "draft" {
+			sections, _ := sessionSections(sess)
+			approved, _ := sessionApproved(sess)
+			if len(sections) > 0 {
+				m.phase = phaseDraft
+				m.sections = sections
+				m.approved = approved
+				m.rendered = make([]string, len(sections))
+				for i, s := range sections {
+					m.rendered[i] = renderMarkdown(s, 80)
 				}
+				// Find first unapproved section
+				m.sectionIndex = len(sections)
+				for i, a := range approved {
+					if !a {
+						m.sectionIndex = i
+						break
+					}
+				}
+				ta.Placeholder = "k/keep to approve, or type revision directive..."
 			}
-			ta.Placeholder = "k/keep to approve, or type revision directive..."
 		}
 
 		slog.Info("session resumed", "id", sess.ID, "phase", sess.Phase, "messages", len(sess.Messages))
@@ -340,17 +346,63 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) saveSession() {
 	if m.session == nil {
-		m.session = session.New(m.sessionKind)
+		m.session = face.NewSession()
+		if m.session.State == nil {
+			m.session.State = make(map[string]any)
+		}
+		m.session.State["kind"] = m.sessionKind
 	}
 	m.session.Messages = m.messages
 	if m.phase == phaseDraft {
 		m.session.Phase = "draft"
-		m.session.Sections = m.sections
-		m.session.Approved = m.approved
+		m.session.State["sections"] = m.sections
+		m.session.State["approved"] = m.approved
 	}
-	if err := m.session.Save(); err != nil {
+	if err := m.session.Save(m.sessionDir); err != nil {
 		slog.Error("failed to save session", "error", err)
 	}
+}
+
+// sessionSections extracts sections from session State map.
+func sessionSections(sess *face.Session) ([]string, bool) {
+	raw, ok := sess.State["sections"]
+	if !ok {
+		return nil, false
+	}
+	// JSON unmarshals []string as []any
+	switch v := raw.(type) {
+	case []string:
+		return v, true
+	case []any:
+		result := make([]string, len(v))
+		for i, item := range v {
+			s, _ := item.(string)
+			result[i] = s
+		}
+		return result, true
+	}
+	return nil, false
+}
+
+// sessionApproved extracts approved flags from session State map.
+func sessionApproved(sess *face.Session) ([]bool, bool) {
+	raw, ok := sess.State["approved"]
+	if !ok {
+		return nil, false
+	}
+	// JSON unmarshals []bool as []any
+	switch v := raw.(type) {
+	case []bool:
+		return v, true
+	case []any:
+		result := make([]bool, len(v))
+		for i, item := range v {
+			b, _ := item.(bool)
+			result[i] = b
+		}
+		return result, true
+	}
+	return nil, false
 }
 
 func (m *Model) refreshViewport() {
