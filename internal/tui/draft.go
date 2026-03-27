@@ -35,7 +35,7 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	draftMessages := make([]loop.Message, len(m.messages))
 	copy(draftMessages, m.messages)
 	draftMessages = append(draftMessages, loop.Message{
-		Role:    "user",
+		Role:    loop.RoleUser,
 		Content: m.draftPrompt,
 	})
 
@@ -49,7 +49,8 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 		Options:   copyMap(m.mcfg.DraftOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
+	cfg := loop.RunConfig{Client: m.draftLLMClient(), Request: req}
+	ch := loop.Stream(context.Background(), cfg)
 	return m, waitForEvent(ch)
 }
 
@@ -97,7 +98,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Info("section feedback", "section", m.sectionIndex+1, "text", text)
 			idx := m.sectionIndex
 			m.sectionHistory[idx] = append(m.sectionHistory[idx], loop.Message{
-				Role:    "user",
+				Role:    loop.RoleUser,
 				Content: text,
 			})
 			m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
@@ -176,7 +177,7 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Add agent response to section history
 		m.sectionHistory[idx] = append(m.sectionHistory[idx], loop.Message{
-			Role:    "assistant",
+			Role:    loop.RoleAssistant,
 			Content: msg.content,
 		})
 		m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
@@ -228,9 +229,9 @@ func (m Model) interviewTranscript() string {
 	var sb strings.Builder
 	for _, msg := range m.messages {
 		switch msg.Role {
-		case "system":
+		case loop.RoleSystem:
 			continue
-		case "user":
+		case loop.RoleUser:
 			// Skip the draft prompt (last user message)
 			if msg.Content == m.draftPrompt {
 				continue
@@ -238,7 +239,7 @@ func (m Model) interviewTranscript() string {
 			sb.WriteString("**Author:** ")
 			sb.WriteString(msg.Content)
 			sb.WriteString("\n\n")
-		case "assistant":
+		case loop.RoleAssistant:
 			sb.WriteString("**Interviewer:** ")
 			sb.WriteString(msg.Content)
 			sb.WriteString("\n\n")
@@ -259,7 +260,7 @@ func (m Model) reviseSection() tea.Cmd {
 
 	// Build messages: system prompt + conversation history for this section
 	messages := []loop.Message{
-		{Role: "system", Content: systemPrompt},
+		{Role: loop.RoleSystem, Content: systemPrompt},
 	}
 	messages = append(messages, m.sectionHistory[idx]...)
 
@@ -270,7 +271,8 @@ func (m Model) reviseSection() tea.Cmd {
 		Options:  copyMap(m.mcfg.RevisionOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
+	cfg := loop.RunConfig{Client: m.draftLLMClient(), Request: req}
+	ch := loop.Stream(context.Background(), cfg)
 
 	// Collect the full response then return as sectionReviseMsg
 	return func() tea.Msg {

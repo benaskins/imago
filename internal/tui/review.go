@@ -79,7 +79,7 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add to review conversation
 			slog.Info("review feedback", "text", text)
 			m.reviewHistory = append(m.reviewHistory, loop.Message{
-				Role:    "user",
+				Role:    loop.RoleUser,
 				Content: text,
 			})
 			m.reviewEntries = append(m.reviewEntries, chatEntry{
@@ -120,7 +120,7 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.draftError = ""
 		m.reviewHistory = append(m.reviewHistory, loop.Message{
-			Role:    "assistant",
+			Role:    loop.RoleAssistant,
 			Content: msg.content,
 		})
 		m.reviewEntries = append(m.reviewEntries, chatEntry{
@@ -156,7 +156,7 @@ func (m Model) sendReview() tea.Cmd {
 	)
 
 	messages := []loop.Message{
-		{Role: "system", Content: systemPrompt},
+		{Role: loop.RoleSystem, Content: systemPrompt},
 	}
 	messages = append(messages, m.reviewHistory...)
 
@@ -167,7 +167,8 @@ func (m Model) sendReview() tea.Cmd {
 		Options:  copyMap(m.mcfg.DraftOptions),
 	}
 
-	ch := loop.Stream(context.Background(), m.draftLLMClient(), req, nil, nil)
+	cfg := loop.RunConfig{Client: m.draftLLMClient(), Request: req}
+	ch := loop.Stream(context.Background(), cfg)
 
 	return func() tea.Msg {
 		var content strings.Builder

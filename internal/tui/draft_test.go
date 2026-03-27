@@ -36,12 +36,12 @@ func TestInterviewTranscript(t *testing.T) {
 	m := Model{
 		draftPrompt: config.DraftPrompt,
 		messages: []loop.Message{
-			{Role: "system", Content: config.SystemPrompt()},
-			{Role: "assistant", Content: "What do you want to write about?"},
-			{Role: "user", Content: "Building local AI tools."},
-			{Role: "assistant", Content: "Tell me more."},
-			{Role: "user", Content: "It's about composability."},
-			{Role: "user", Content: config.DraftPrompt}, // should be excluded
+			{Role: loop.RoleSystem, Content: config.SystemPrompt()},
+			{Role: loop.RoleAssistant, Content: "What do you want to write about?"},
+			{Role: loop.RoleUser, Content: "Building local AI tools."},
+			{Role: loop.RoleAssistant, Content: "Tell me more."},
+			{Role: loop.RoleUser, Content: "It's about composability."},
+			{Role: loop.RoleUser, Content: config.DraftPrompt}, // should be excluded
 		},
 	}
 

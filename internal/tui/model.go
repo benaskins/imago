@@ -108,7 +108,7 @@ func (m *Model) WithDraftClient(c loop.LLMClient) {
 func (m *Model) WithWeeklyMode(systemPrompt string) {
 	m.sessionKind = "weekly"
 	m.draftPrompt = config.WeeklyDraftPrompt
-	if len(m.messages) > 0 && m.messages[0].Role == "system" {
+	if len(m.messages) > 0 && m.messages[0].Role == loop.RoleSystem {
 		m.messages[0].Content = systemPrompt
 	}
 }
@@ -141,7 +141,7 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 		input:   ta,
 		session: sess,
 		messages: []loop.Message{
-			{Role: "system", Content: config.SystemPrompt()},
+			{Role: loop.RoleSystem, Content: config.SystemPrompt()},
 		},
 	}
 
@@ -247,7 +247,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add user message
 			slog.Info("user message", "phase", "interview", "length", len(text))
 			m.entries = append(m.entries, chatEntry{role: "user", content: text})
-			m.messages = append(m.messages, loop.Message{Role: "user", Content: text})
+			m.messages = append(m.messages, loop.Message{Role: loop.RoleUser, Content: text})
 			m.waiting = true
 			m.streaming = ""
 			m.saveSession()
@@ -308,7 +308,7 @@ func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if content != "" {
 				slog.Info("agent response", "phase", "interview", "length", len(content))
 				m.entries = append(m.entries, chatEntry{role: "agent", content: content})
-				m.messages = append(m.messages, loop.Message{Role: "assistant", Content: content})
+				m.messages = append(m.messages, loop.Message{Role: loop.RoleAssistant, Content: content})
 				m.saveSession()
 			}
 			m.streaming = ""
@@ -450,7 +450,8 @@ func (m Model) startLLM(modelName string) tea.Cmd {
 		}
 	}
 
-	ch := loop.Stream(context.Background(), m.client, req, m.tools, nil)
+	cfg := loop.RunConfig{Client: m.client, Request: req, Tools: m.tools}
+	ch := loop.Stream(context.Background(), cfg)
 	return waitForEvent(ch)
 }
 

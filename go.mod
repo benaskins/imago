@@ -3,8 +3,8 @@ module github.com/benaskins/imago
 go 1.26.1
 
 require (
-	github.com/benaskins/axon-loop v0.6.0
-	github.com/benaskins/axon-talk v0.4.2
+	github.com/benaskins/axon-loop v0.7.0
+	github.com/benaskins/axon-talk v0.5.0
 	github.com/benaskins/axon-tool v0.1.6
 	github.com/benaskins/axon-wire v0.0.0
 	github.com/charmbracelet/bubbles v1.0.0
@@ -63,6 +63,7 @@ require (
 )
 
 replace (
+	github.com/benaskins/axon-face => /Users/benaskins/dev/lamina/axon-face
 	github.com/benaskins/axon-talk => /Users/benaskins/dev/lamina/axon-talk
 	github.com/benaskins/axon-tool => /Users/benaskins/dev/lamina/axon-tool
 	github.com/benaskins/axon-wire => /Users/benaskins/dev/lamina/axon-wire
