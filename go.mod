@@ -3,11 +3,11 @@ module github.com/benaskins/imago
 go 1.26.1
 
 require (
-	github.com/benaskins/axon-face v0.0.0-00010101000000-000000000000
-	github.com/benaskins/axon-loop v0.7.0
-	github.com/benaskins/axon-talk v0.5.1
-	github.com/benaskins/axon-tool v0.1.6
-	github.com/benaskins/axon-wire v0.0.0
+	github.com/benaskins/axon-face v0.1.2
+	github.com/benaskins/axon-loop v0.7.3
+	github.com/benaskins/axon-talk v0.6.4
+	github.com/benaskins/axon-tool v0.1.10
+	github.com/benaskins/axon-wire v0.1.4
 	github.com/charmbracelet/bubbletea v1.3.10
 	golang.org/x/net v0.46.0
 )
@@ -18,7 +18,7 @@ require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
-	github.com/benaskins/axon v0.4.3 // indirect
+	github.com/benaskins/axon v0.5.4 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/charmbracelet/bubbles v1.0.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
@@ -51,15 +51,3 @@ require (
 	golang.org/x/text v0.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/benaskins/axon => ../../axon
-
-replace github.com/benaskins/axon-face => ../../axon-face
-
-replace github.com/benaskins/axon-loop => ../../axon-loop
-
-replace github.com/benaskins/axon-talk => ../../axon-talk
-
-replace github.com/benaskins/axon-tool => ../../axon-tool
-
-replace github.com/benaskins/axon-wire => ../../axon-wire
