@@ -1,3 +1,8 @@
+---
+module: github.com/benaskins/imago
+kind: app
+---
+
 # imago
 
 Interactive CLI that produces blog posts from structured interviews. Bubble Tea TUI with three phases: interview, section-by-section draft review, and final article review.
