@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
+	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
 
 	"github.com/benaskins/imago/internal/config"
@@ -17,29 +17,39 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Draft-specific styles not provided by face.Styles.
+var (
+	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	pendingStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	sectionBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("8")).
+				Padding(1, 2)
+)
+
 // transitionToDraft switches from interview to draft phase.
 func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 	m.phase = phaseDraft
-	m.waiting = true
-	m.streaming = ""
+	m.Waiting = true
+	m.Streaming = ""
 	m.draftError = ""
 
 	// Reset input for draft controls
-	m.input.Reset()
-	m.input.Placeholder = "/keep to approve, or type feedback..."
-	m.input.Focus()
+	m.Input.Reset()
+	m.Input.Placeholder = "/keep to approve, or type feedback..."
+	m.Input.Focus()
 
-	slog.Info("draft generation starting", "model", m.mcfg.DraftModel, "provider", m.mcfg.Provider, "messages", len(m.messages))
+	slog.Info("draft generation starting", "model", m.mcfg.DraftModel, "provider", m.mcfg.Provider, "messages", len(m.Messages))
 
 	// Build the draft request: full transcript + draft prompt
-	draftMessages := make([]loop.Message, len(m.messages))
-	copy(draftMessages, m.messages)
+	draftMessages := make([]loop.Message, len(m.Messages))
+	copy(draftMessages, m.Messages)
 	draftMessages = append(draftMessages, loop.Message{
 		Role:    loop.RoleUser,
 		Content: m.draftPrompt,
 	})
 
-	m.messages = draftMessages
+	m.Messages = draftMessages
 
 	req := &loop.Request{
 		Model:     m.mcfg.DraftModel,
@@ -51,26 +61,24 @@ func (m Model) transitionToDraft() (tea.Model, tea.Cmd) {
 
 	cfg := loop.RunConfig{Client: m.draftLLMClient(), Request: req}
 	ch := loop.Stream(context.Background(), cfg)
-	return m, waitForEvent(ch)
+	return m, face.WaitForEvent(ch)
 }
 
 func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "enter":
-			if m.waiting {
-				break
+			if m.Waiting {
+				return m, nil
 			}
-			text := strings.TrimSpace(m.input.Value())
+			text := strings.TrimSpace(m.Input.Value())
 			if text == "" {
-				break
+				return m, nil
 			}
-			m.input.Reset()
+			m.Input.Reset()
 
 			// Guard: no sections to work with
 			if len(m.sections) == 0 {
@@ -85,90 +93,78 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sectionIndex++
 				m.saveSession()
 
-				// Check if all sections approved — transition to final review
 				if m.sectionIndex >= len(m.sections) {
 					return m.transitionToReview()
 				}
 
-				m.refreshDraftViewport()
+				m.showCurrentSection()
 				return m, nil
 			}
 
-			// Conversational revision — add to section history
+			// Conversational revision
 			slog.Info("section feedback", "section", m.sectionIndex+1, "text", text)
 			idx := m.sectionIndex
 			m.sectionHistory[idx] = append(m.sectionHistory[idx], loop.Message{
 				Role:    loop.RoleUser,
 				Content: text,
 			})
-			m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
-				role:    "user",
-				content: text,
+			m.revisionEntries[idx] = append(m.revisionEntries[idx], face.Entry{
+				Role:    face.RoleUser,
+				Content: text,
 			})
-			m.waiting = true
+			m.Waiting = true
 			m.draftError = ""
-			m.refreshDraftViewport()
+			m.showCurrentSection()
 			return m, m.reviseSection()
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		inputHeight := 5
-		statusHeight := 1
+		m.Chat.HandleResize(msg)
+		m.showCurrentSection()
+		return m, nil
 
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-inputHeight-statusHeight)
-			m.viewport.YPosition = 0
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - inputHeight - statusHeight
-		}
-		m.input.SetWidth(msg.Width - 2)
-		m.refreshDraftViewport()
-
-	case streamTickMsg:
-		ev := msg.event
-		if ev.err != nil {
-			slog.Error("draft stream error", "error", ev.err)
-			m.draftError = ev.err.Error()
-			m.streaming = ""
-			m.waiting = false
-			m.refreshDraftViewport()
+	case face.StreamTickMsg:
+		ev := msg.Event
+		if ev.Err != nil {
+			slog.Error("draft stream error", "error", ev.Err)
+			m.draftError = ev.Err.Error()
+			m.Streaming = ""
+			m.Waiting = false
+			m.showCurrentSection()
 			return m, nil
 		}
-		if ev.done {
-			content := ev.content
+		if ev.Done {
+			content := ev.Content
 			if content == "" {
-				content = m.streaming
+				content = m.Streaming
 			}
 			slog.Info("draft generation complete", "content_length", len(content))
 			if content != "" {
 				m.parseSections(content)
 				slog.Info("draft parsed", "sections", len(m.sections))
 				m.saveSession()
+				m.showCurrentSection()
 			} else {
 				slog.Warn("draft generation produced no content")
 				m.draftError = "Draft generation produced no content. Press enter to retry."
 			}
-			m.streaming = ""
-			m.waiting = false
-			m.refreshDraftViewport()
+			m.Streaming = ""
+			m.Waiting = false
+			m.RefreshViewport()
 			return m, nil
 		}
-		if ev.token != "" {
-			m.streaming += ev.token
-			m.refreshDraftViewport()
+		if ev.Token != "" {
+			m.Streaming += ev.Token
+			m.RefreshViewport()
 		}
-		return m, waitForEvent(msg.ch)
+		return m, face.WaitForEvent(msg.Ch)
 
 	case sectionReviseMsg:
 		if msg.err != nil {
 			slog.Error("section revision error", "error", msg.err)
 			m.draftError = msg.err.Error()
-			m.waiting = false
-			m.refreshDraftViewport()
+			m.Waiting = false
+			m.showCurrentSection()
 			return m, nil
 		}
 		m.draftError = ""
@@ -180,29 +176,22 @@ func (m Model) updateDraft(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Role:    loop.RoleAssistant,
 			Content: msg.content,
 		})
-		m.revisionEntries[idx] = append(m.revisionEntries[idx], chatEntry{
-			role:    "agent",
-			content: msg.content,
+		m.revisionEntries[idx] = append(m.revisionEntries[idx], face.Entry{
+			Role:    face.RoleAgent,
+			Content: msg.content,
 		})
 
 		// Update the section with the agent's response
 		m.sections[idx] = msg.content
-		m.rendered[idx] = renderMarkdown(msg.content, m.width)
-		m.waiting = false
+		m.rendered[idx] = renderMarkdown(msg.content, m.Width)
+		m.Waiting = false
 		m.saveSession()
-		m.refreshDraftViewport()
+		m.showCurrentSection()
 		return m, nil
 	}
 
-	// Update sub-components
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
+	cmd := m.Chat.UpdateInput(msg)
+	return m, cmd
 }
 
 func (m *Model) parseSections(content string) {
@@ -216,18 +205,83 @@ func (m *Model) parseSections(content string) {
 	m.approved = make([]bool, len(m.sections))
 	m.rendered = make([]string, len(m.sections))
 	m.sectionHistory = make([][]loop.Message, len(m.sections))
-	m.revisionEntries = make([][]chatEntry, len(m.sections))
+	m.revisionEntries = make([][]face.Entry, len(m.sections))
 	for i, s := range m.sections {
-		m.rendered[i] = renderMarkdown(s, m.width)
+		m.rendered[i] = renderMarkdown(s, m.Width)
 	}
 	m.sectionIndex = 0
+}
+
+// showCurrentSection rebuilds the Chat entries to display the current draft state.
+func (m *Model) showCurrentSection() {
+	m.Entries = nil
+
+	if m.draftError != "" && !m.Waiting {
+		m.Chat.AppendEntry(face.Entry{
+			Role:    face.RoleAgent,
+			Content: fmt.Sprintf("Error: %s\n\nPress enter to retry.", m.draftError),
+		})
+		m.RefreshViewport()
+		return
+	}
+
+	if len(m.sections) == 0 {
+		return
+	}
+
+	// Section overview
+	var overview strings.Builder
+	for i := range m.sections {
+		marker := "[ ]"
+		if m.approved[i] {
+			marker = "[v]"
+		}
+		if i == m.sectionIndex {
+			marker = "[>]"
+		}
+		label := strings.SplitN(m.sections[i], "\n", 2)[0]
+		overview.WriteString(fmt.Sprintf("%s %d. %s\n", marker, i+1, label))
+	}
+
+	// Current section content
+	sectionContent := ""
+	if m.sectionIndex < len(m.sections) {
+		sectionContent = m.sections[m.sectionIndex]
+	}
+
+	m.Chat.AppendEntry(face.Entry{
+		Role: face.RoleAgent,
+		Content: fmt.Sprintf("Draft review, section %d of %d\n\n%s\n---\n\n%s\n\n/keep to approve, or type revision feedback",
+			m.sectionIndex+1, len(m.sections), overview.String(), sectionContent),
+	})
+
+	// Show revision conversation for current section
+	if m.sectionIndex < len(m.revisionEntries) {
+		for _, e := range m.revisionEntries[m.sectionIndex] {
+			if e.Role == face.RoleAgent {
+				// Show preview, not full revised section
+				m.Chat.AppendEntry(face.Entry{
+					Role:    face.RoleAgent,
+					Content: revisionPreview(e.Content),
+				})
+			} else {
+				m.Chat.AppendEntry(e)
+			}
+		}
+	}
+
+	if m.Waiting {
+		m.Chat.AppendEntry(face.Entry{Role: face.RoleAction, Content: "revising..."})
+	}
+
+	m.RefreshViewport()
 }
 
 // interviewTranscript formats the interview messages as a readable transcript
 // for inclusion in revision context.
 func (m Model) interviewTranscript() string {
 	var sb strings.Builder
-	for _, msg := range m.messages {
+	for _, msg := range m.Messages {
 		switch msg.Role {
 		case loop.RoleSystem:
 			continue
@@ -248,8 +302,7 @@ func (m Model) interviewTranscript() string {
 	return strings.TrimSpace(sb.String())
 }
 
-// reviseSection sends the current section to the LLM with full context
-// (interview transcript, full draft, section history).
+// reviseSection sends the current section to the LLM with full context.
 func (m Model) reviseSection() tea.Cmd {
 	idx := m.sectionIndex
 	systemPrompt := fmt.Sprintf(config.RevisionPromptTemplate,
@@ -258,7 +311,6 @@ func (m Model) reviseSection() tea.Cmd {
 		m.sections[idx],
 	)
 
-	// Build messages: system prompt + conversation history for this section
 	messages := []loop.Message{
 		{Role: loop.RoleSystem, Content: systemPrompt},
 	}
@@ -274,7 +326,6 @@ func (m Model) reviseSection() tea.Cmd {
 	cfg := loop.RunConfig{Client: m.draftLLMClient(), Request: req}
 	ch := loop.Stream(context.Background(), cfg)
 
-	// Collect the full response then return as sectionReviseMsg
 	return func() tea.Msg {
 		var content strings.Builder
 		for ev := range ch {
@@ -292,7 +343,6 @@ func (m Model) reviseSection() tea.Cmd {
 				return sectionReviseMsg{content: c}
 			}
 		}
-		// Channel closed without Done event
 		c := content.String()
 		if c == "" {
 			return sectionReviseMsg{err: fmt.Errorf("revision produced no content")}
@@ -306,108 +356,7 @@ func assembleDraft(sections []string) string {
 	return strings.Join(sections, "\n\n")
 }
 
-func (m *Model) refreshDraftViewport() {
-	var sb strings.Builder
-	w := m.width
-	if w <= 0 {
-		w = 80
-	}
-	contentWidth := w - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
-
-	// Error state
-	if m.draftError != "" && !m.waiting {
-		sb.WriteString(headerStyle.Render("Draft error"))
-		sb.WriteString("\n\n")
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.draftError))
-		sb.WriteString("\n\n")
-		sb.WriteString(statusStyle.Render("Press enter to retry."))
-		m.viewport.SetContent(sb.String())
-		return
-	}
-
-	if m.waiting && len(m.sections) == 0 {
-		// Still generating the draft
-		sb.WriteString(headerStyle.Render("Generating draft..."))
-		sb.WriteString("\n\n")
-		if m.streaming != "" {
-			sb.WriteString(m.streaming)
-			sb.WriteString("\u2588\n")
-		}
-		m.viewport.SetContent(sb.String())
-		m.viewport.GotoBottom()
-		return
-	}
-
-	if len(m.sections) == 0 {
-		sb.WriteString(headerStyle.Render("No draft content"))
-		sb.WriteString("\n\n")
-		sb.WriteString(statusStyle.Render("Press enter to retry draft generation."))
-		m.viewport.SetContent(sb.String())
-		return
-	}
-
-	// Show section-by-section review
-	sb.WriteString(headerStyle.Render(fmt.Sprintf("Draft review — section %d of %d", m.sectionIndex+1, len(m.sections))))
-	sb.WriteString("\n\n")
-
-	// Show status of all sections
-	for i := range m.sections {
-		marker := "  "
-		if i == m.sectionIndex {
-			marker = "> "
-		}
-		if m.approved[i] {
-			sb.WriteString(approvedStyle.Render(fmt.Sprintf("%s[%d] approved", marker, i+1)))
-		} else if i == m.sectionIndex {
-			sb.WriteString(pendingStyle.Render(fmt.Sprintf("%s[%d] reviewing", marker, i+1)))
-		} else {
-			sb.WriteString(statusStyle.Render(fmt.Sprintf("%s[%d] pending", marker, i+1)))
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString("\n")
-
-	// Render current section
-	if m.sectionIndex < len(m.rendered) {
-		bordered := sectionBorderStyle.Width(contentWidth).Render(m.rendered[m.sectionIndex])
-		sb.WriteString(bordered)
-		sb.WriteString("\n")
-	}
-
-	// Show revision conversation for current section
-	if m.sectionIndex < len(m.revisionEntries) {
-		for _, e := range m.revisionEntries[m.sectionIndex] {
-			sb.WriteString("\n")
-			switch e.role {
-			case "user":
-				sb.WriteString(userStyle.Render("you") + " ")
-				sb.WriteString(wordWrap(e.content, contentWidth-5))
-				sb.WriteString("\n")
-			case "agent":
-				sb.WriteString(agentLabelStyle.Render("imago") + " ")
-				// Show a summary, not the full revised section
-				preview := revisionPreview(e.content)
-				sb.WriteString(agentStyle.Width(contentWidth - 7).Render(preview))
-				sb.WriteString("\n")
-			}
-		}
-	}
-
-	if m.waiting {
-		sb.WriteString("\n")
-		sb.WriteString(statusStyle.Render("revising..."))
-	}
-
-	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
-}
-
 // revisionPreview returns a short preview of a revision response.
-// Since the agent returns the full revised section, we show a summary
-// rather than repeating the entire section in the conversation.
 func revisionPreview(content string) string {
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	if len(lines) <= 3 {
@@ -417,18 +366,12 @@ func revisionPreview(content string) string {
 }
 
 func (m Model) viewDraft() string {
-	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
-	if m.waiting {
-		status = statusStyle.Render("generating...") + "  " + model
+	model := m.Styles.Model.Render(m.currentModel())
+	status := m.Styles.Status.Render("/keep to approve | type feedback to revise | ctrl+c quit") + "  " + model
+	if m.Waiting {
+		status = m.Styles.Status.Render("generating...") + "  " + model
 	}
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.viewport.View(),
-		status,
-		m.input.View(),
-	)
+	return m.Chat.View(status)
 }
 
 func renderMarkdown(md string, width int) string {

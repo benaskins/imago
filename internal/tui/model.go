@@ -2,15 +2,10 @@
 package tui
 
 import (
-	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
@@ -28,67 +23,39 @@ const (
 	phaseReview
 )
 
-// chatEntry is a single item in the conversation view.
-type chatEntry struct {
-	role      string // "user", "agent", "tool"
-	content   string
-	collapsed bool // for tool use lines, whether expanded or not
-}
+// phaseSwitchMsg triggers a transition from interview to draft.
+type phaseSwitchMsg struct{}
 
-// streamEvent is sent over a channel from the LLM goroutine.
-type streamEvent struct {
-	token   string
-	tool    *toolUseMsg
-	done    bool
+// sectionReviseMsg carries the revised section content.
+type sectionReviseMsg struct {
+	content string
 	err     error
-	content string // final content on done
-}
-
-// streamTickMsg wraps a stream event for the Bubble Tea update loop.
-type streamTickMsg struct {
-	event streamEvent
-	ch    <-chan loop.Event
 }
 
 // Model is the top-level Bubble Tea model for imago.
 type Model struct {
-	// Phase
-	phase phase
+	face.Chat
 
-	// Interview state
-	entries   []chatEntry
-	streaming string // content being streamed from LLM
-	waiting   bool   // true while LLM is generating
-
-	// Components
-	input    textarea.Model
-	viewport viewport.Model
-	width    int
-	height   int
-	ready    bool
-
-	// LLM
+	phase       phase
 	client      loop.LLMClient
 	draftClient loop.LLMClient // optional: separate client for draft/revision phases
 	mcfg        config.ModelConfig
 	tools       map[string]tool.ToolDef
-	messages    []loop.Message // full conversation history
 
 	// Draft state
-	sections        []string           // markdown sections of the draft
-	rendered        []string           // glamour-rendered sections
-	sectionIndex    int                // current section being reviewed
-	approved        []bool             // which sections are approved
-	draftFinished   bool               // all sections approved
-	finalMarkdown   string             // the complete markdown output
-	draftError      string             // error message to display in draft phase
-	fullDraft       string             // complete draft text for context
-	sectionHistory  [][]loop.Message   // per-section conversation history
-	revisionEntries [][]chatEntry      // per-section chat entries for display
+	sections        []string
+	rendered        []string // glamour-rendered sections
+	sectionIndex    int
+	approved        []bool
+	finalMarkdown   string
+	draftError      string
+	fullDraft       string
+	sectionHistory  [][]loop.Message
+	revisionEntries [][]face.Entry
 
 	// Review state (final full-article review)
-	reviewHistory []loop.Message // conversation about the full article
-	reviewEntries []chatEntry    // display entries for review conversation
+	reviewHistory []loop.Message
+	reviewEntries []face.Entry
 
 	// Prompt overrides
 	draftPrompt string // defaults to config.DraftPrompt
@@ -105,17 +72,15 @@ func (m *Model) WithDraftClient(c loop.LLMClient) {
 }
 
 // WithWeeklyMode configures the model for weekly update writing.
-// It replaces the system prompt, draft prompt, and sets the session kind.
 func (m *Model) WithWeeklyMode(systemPrompt string) {
 	m.sessionKind = "weekly"
 	m.draftPrompt = config.WeeklyDraftPrompt
-	if len(m.messages) > 0 && m.messages[0].Role == loop.RoleSystem {
-		m.messages[0].Content = systemPrompt
+	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
+		m.Messages[0].Content = systemPrompt
 	}
 }
 
 // draftLLMClient returns the client to use for draft/revision phases.
-// Falls back to the interview client if no draft client is set.
 func (m *Model) draftLLMClient() loop.LLMClient {
 	if m.draftClient != nil {
 		return m.draftClient
@@ -125,39 +90,33 @@ func (m *Model) draftLLMClient() loop.LLMClient {
 
 // New creates a new Model with the given LLM client and tools.
 func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir string) Model {
-	ta := textarea.New()
-	ta.Placeholder = "Type your response..."
-	ta.Focus()
-	ta.CharLimit = 0
-	ta.SetHeight(3)
-	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline.SetEnabled(false)
+	chat := face.New("imago")
+	chat.Messages = []loop.Message{
+		{Role: loop.RoleSystem, Content: config.SystemPrompt()},
+	}
 
 	m := Model{
+		Chat:        chat,
 		phase:       phaseInterview,
 		client:      client,
 		mcfg:        mcfg,
 		draftPrompt: config.DraftPrompt,
-		tools:      tools,
-		input:      ta,
-		session:    sess,
-		sessionDir: sessionDir,
-		messages: []loop.Message{
-			{Role: loop.RoleSystem, Content: config.SystemPrompt()},
-		},
+		tools:       tools,
+		session:     sess,
+		sessionDir:  sessionDir,
 	}
 
 	// Restore from session if resuming
 	if sess != nil && len(sess.Messages) > 0 {
-		m.messages = sess.Messages
+		m.Messages = sess.Messages
 
 		// Rebuild entries from messages for display
 		for _, msg := range sess.Messages {
 			switch msg.Role {
 			case loop.RoleUser:
-				m.entries = append(m.entries, chatEntry{role: "user", content: msg.Content})
+				m.Chat.AppendEntry(face.Entry{Role: face.RoleUser, Content: msg.Content})
 			case loop.RoleAssistant:
-				m.entries = append(m.entries, chatEntry{role: "agent", content: msg.Content})
+				m.Chat.AppendEntry(face.Entry{Role: face.RoleAgent, Content: msg.Content})
 			}
 		}
 
@@ -168,10 +127,6 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 				m.phase = phaseDraft
 				m.sections = sections
 				m.approved = approved
-				m.rendered = make([]string, len(sections))
-				for i, s := range sections {
-					m.rendered[i] = renderMarkdown(s, 80)
-				}
 				// Find first unapproved section
 				m.sectionIndex = len(sections)
 				for i, a := range approved {
@@ -180,7 +135,7 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 						break
 					}
 				}
-				ta.Placeholder = "k/keep to approve, or type revision directive..."
+				m.Input.Placeholder = "k/keep to approve, or type revision directive..."
 			}
 		}
 
@@ -192,8 +147,8 @@ func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.T
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		textarea.Blink,
-		m.startLLM(m.mcfg.InterviewModel),
+		m.Chat.InitCmd(),
+		m.startLLM(),
 	)
 }
 
@@ -210,7 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	if !m.ready {
+	if !m.Ready {
 		return "Initializing..."
 	}
 
@@ -228,121 +183,78 @@ func (m Model) View() string {
 // --- Interview phase ---
 
 func (m Model) updateInterview(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "enter":
-			if m.waiting {
-				break
-			}
-			text := strings.TrimSpace(m.input.Value())
-			if text == "" {
-				break
-			}
-			m.input.Reset()
-
-			// Check for /draft command
+		// Check for /draft command before base handling
+		if msg.String() == "enter" && !m.Waiting {
+			text := strings.TrimSpace(m.Input.Value())
 			if text == "/draft" {
+				m.Input.Reset()
 				return m, func() tea.Msg { return phaseSwitchMsg{} }
 			}
+		}
 
-			// Add user message
-			slog.Info("user message", "phase", "interview", "length", len(text))
-			m.entries = append(m.entries, chatEntry{role: "user", content: text})
-			m.messages = append(m.messages, loop.Message{Role: loop.RoleUser, Content: text})
-			m.waiting = true
-			m.streaming = ""
-			m.saveSession()
-			m.refreshViewport()
-
-			return m, m.startLLM(m.mcfg.InterviewModel)
-		case "tab":
-			m.toggleLastToolEntry()
-			m.refreshViewport()
+		cmd, handled := m.Chat.HandleKey(msg)
+		if handled {
+			if cmd != nil {
+				return m, cmd
+			}
+			// enter was handled (user message sent) -- start the stream
+			if msg.String() == "enter" && m.Waiting {
+				m.saveSession()
+				return m, m.startLLM()
+			}
 			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		inputHeight := 5
-		statusHeight := 1
+		m.Chat.HandleResize(msg)
+		return m, nil
 
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-inputHeight-statusHeight)
-			m.viewport.YPosition = 0
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - inputHeight - statusHeight
+	case face.StreamTickMsg:
+		cmd := m.Chat.HandleStreamTick(msg)
+		if cmd == nil {
+			// Stream done -- save session
+			m.saveSession()
 		}
-		m.input.SetWidth(msg.Width - 2)
-		m.refreshViewport()
-
-	case streamTickMsg:
-		ev := msg.event
-		if ev.err != nil {
-			m.entries = append(m.entries, chatEntry{role: "agent", content: fmt.Sprintf("Error: %v", ev.err)})
-			m.streaming = ""
-			m.waiting = false
-			m.refreshViewport()
-			return m, nil
-		}
-		if ev.tool != nil {
-			slog.Info("tool use", "tool", ev.tool.name, "args", ev.tool.args)
-			label := fmt.Sprintf("\u21b3 %s", ev.tool.name)
-			if len(ev.tool.args) > 0 {
-				var parts []string
-				for k, v := range ev.tool.args {
-					parts = append(parts, fmt.Sprintf("%s=%v", k, v))
-				}
-				label += " " + strings.Join(parts, ", ")
-			}
-			m.entries = append(m.entries, chatEntry{role: "tool", content: label, collapsed: true})
-			m.refreshViewport()
-			return m, waitForEvent(msg.ch)
-		}
-		if ev.done {
-			content := ev.content
-			if content == "" {
-				content = m.streaming
-			}
-			if content != "" {
-				slog.Info("agent response", "phase", "interview", "length", len(content))
-				m.entries = append(m.entries, chatEntry{role: "agent", content: content})
-				m.messages = append(m.messages, loop.Message{Role: loop.RoleAssistant, Content: content})
-				m.saveSession()
-			}
-			m.streaming = ""
-			m.waiting = false
-			m.refreshViewport()
-			return m, nil
-		}
-		if ev.token != "" {
-			m.streaming += ev.token
-			m.refreshViewport()
-		}
-		return m, waitForEvent(msg.ch)
+		return m, cmd
 
 	case phaseSwitchMsg:
-		slog.Info("phase transition", "from", "interview", "to", "draft", "turns", len(m.entries))
+		slog.Info("phase transition", "from", "interview", "to", "draft", "turns", len(m.Entries))
 		return m.transitionToDraft()
 	}
 
-	// Update sub-components
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
+	cmd := m.Chat.UpdateInput(msg)
+	return m, cmd
 }
+
+func (m Model) viewInterview() string {
+	model := m.Styles.Model.Render(m.currentModel())
+	status := m.Styles.Status.Render("ctrl+c quit | /draft to start drafting") + "  " + model
+	if m.Waiting {
+		status = m.Styles.Status.Render("thinking...") + "  " + model
+	}
+	return m.Chat.View(status)
+}
+
+func (m Model) currentModel() string {
+	switch m.phase {
+	case phaseDraft, phaseReview:
+		return m.mcfg.DraftModel
+	default:
+		return m.mcfg.InterviewModel
+	}
+}
+
+func (m Model) startLLM() tea.Cmd {
+	req := &loop.Request{
+		Model:   m.mcfg.InterviewModel,
+		Options: copyMap(m.mcfg.InterviewOptions),
+	}
+	return m.Chat.StartStream(m.client, req, m.tools)
+}
+
+// --- Session persistence ---
 
 func (m *Model) saveSession() {
 	if m.session == nil {
@@ -352,7 +264,7 @@ func (m *Model) saveSession() {
 		}
 		m.session.State["kind"] = m.sessionKind
 	}
-	m.session.Messages = m.messages
+	m.session.Messages = m.Messages
 	if m.phase == phaseDraft {
 		m.session.Phase = "draft"
 		m.session.State["sections"] = m.sections
@@ -369,7 +281,6 @@ func sessionSections(sess *face.Session) ([]string, bool) {
 	if !ok {
 		return nil, false
 	}
-	// JSON unmarshals []string as []any
 	switch v := raw.(type) {
 	case []string:
 		return v, true
@@ -390,7 +301,6 @@ func sessionApproved(sess *face.Session) ([]bool, bool) {
 	if !ok {
 		return nil, false
 	}
-	// JSON unmarshals []bool as []any
 	switch v := raw.(type) {
 	case []bool:
 		return v, true
@@ -403,164 +313,6 @@ func sessionApproved(sess *face.Session) ([]bool, bool) {
 		return result, true
 	}
 	return nil, false
-}
-
-func (m *Model) refreshViewport() {
-	var sb strings.Builder
-	w := m.width
-	if w <= 0 {
-		w = 80
-	}
-
-	contentWidth := w - 2
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
-
-	for _, e := range m.entries {
-		switch e.role {
-		case "user":
-			sb.WriteString(userStyle.Render("you") + " ")
-			sb.WriteString(wordWrap(e.content, contentWidth-5))
-			sb.WriteString("\n\n")
-		case "agent":
-			sb.WriteString(agentLabelStyle.Render("imago") + " ")
-			sb.WriteString(agentStyle.Width(contentWidth-7).Render(e.content))
-			sb.WriteString("\n\n")
-		case "tool":
-			sb.WriteString(toolStyle.Render(e.content))
-			sb.WriteString("\n")
-		}
-	}
-
-	// Show streaming content
-	if m.streaming != "" {
-		sb.WriteString(agentLabelStyle.Render("imago") + " ")
-		sb.WriteString(agentStyle.Width(contentWidth-7).Render(m.streaming))
-		sb.WriteString("\u2588") // block cursor
-		sb.WriteString("\n")
-	}
-
-	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
-}
-
-func (m *Model) toggleLastToolEntry() {
-	for i := len(m.entries) - 1; i >= 0; i-- {
-		if m.entries[i].role == "tool" {
-			m.entries[i].collapsed = !m.entries[i].collapsed
-			return
-		}
-	}
-}
-
-func (m Model) currentModel() string {
-	switch m.phase {
-	case phaseDraft, phaseReview:
-		return m.mcfg.DraftModel
-	default:
-		return m.mcfg.InterviewModel
-	}
-}
-
-func (m Model) viewInterview() string {
-	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("ctrl+c quit | /draft to start drafting") + "  " + model
-	if m.waiting {
-		status = statusStyle.Render("thinking...") + "  " + model
-	}
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.viewport.View(),
-		status,
-		m.input.View(),
-	)
-}
-
-// startLLM launches the LLM via loop.Stream and returns a command that
-// reads events from the channel.
-func (m Model) startLLM(modelName string) tea.Cmd {
-	maxTokens := m.mcfg.MaxTokens
-	opts := copyMap(m.mcfg.InterviewOptions)
-	if m.phase == phaseDraft {
-		maxTokens = m.mcfg.DraftMaxTokens
-		opts = copyMap(m.mcfg.DraftOptions)
-	}
-
-	req := &loop.Request{
-		Model:     modelName,
-		Messages:  m.messages,
-		Stream:    true,
-		MaxTokens: maxTokens,
-		Options:   opts,
-	}
-
-	if len(m.tools) > 0 {
-		for _, td := range m.tools {
-			req.Tools = append(req.Tools, td)
-		}
-	}
-
-	cfg := loop.RunConfig{Client: m.client, Request: req, Tools: m.tools}
-	ch := loop.Stream(context.Background(), cfg)
-	return waitForEvent(ch)
-}
-
-// wordWrap wraps text at the given width on word boundaries.
-func wordWrap(s string, width int) string {
-	if width <= 0 {
-		return s
-	}
-	var sb strings.Builder
-	for _, line := range strings.Split(s, "\n") {
-		if len(line) <= width {
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(line)
-			continue
-		}
-		words := strings.Fields(line)
-		col := 0
-		for i, w := range words {
-			if i > 0 && col+1+len(w) > width {
-				sb.WriteString("\n")
-				col = 0
-			} else if i > 0 {
-				sb.WriteString(" ")
-				col++
-			}
-			sb.WriteString(w)
-			col += len(w)
-		}
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// waitForEvent reads the next loop.Event from the stream channel and
-// converts it to a streamTickMsg for Bubble Tea's update loop.
-func waitForEvent(ch <-chan loop.Event) tea.Cmd {
-	return func() tea.Msg {
-		ev, ok := <-ch
-		if !ok {
-			return streamTickMsg{event: streamEvent{done: true}}
-		}
-		se := streamEvent{}
-		switch {
-		case ev.Err != nil:
-			se.err = ev.Err
-		case ev.ToolUse != nil:
-			se.tool = &toolUseMsg{name: ev.ToolUse.Name, args: ev.ToolUse.Args}
-		case ev.Done != nil:
-			se.done = true
-			se.content = ev.Done.Content
-		case ev.Token != "":
-			se.token = ev.Token
-		}
-		return streamTickMsg{event: se, ch: ch}
-	}
 }
 
 func copyMap(m map[string]any) map[string]any {

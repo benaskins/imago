@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
 
 	"github.com/benaskins/imago/internal/config"
@@ -33,16 +34,18 @@ func TestAssembleDraft(t *testing.T) {
 }
 
 func TestInterviewTranscript(t *testing.T) {
+	chat := face.New("imago")
+	chat.Messages = []loop.Message{
+		{Role: loop.RoleSystem, Content: config.SystemPrompt()},
+		{Role: loop.RoleAssistant, Content: "What do you want to write about?"},
+		{Role: loop.RoleUser, Content: "Building local AI tools."},
+		{Role: loop.RoleAssistant, Content: "Tell me more."},
+		{Role: loop.RoleUser, Content: "It's about composability."},
+		{Role: loop.RoleUser, Content: config.DraftPrompt}, // should be excluded
+	}
 	m := Model{
+		Chat:        chat,
 		draftPrompt: config.DraftPrompt,
-		messages: []loop.Message{
-			{Role: loop.RoleSystem, Content: config.SystemPrompt()},
-			{Role: loop.RoleAssistant, Content: "What do you want to write about?"},
-			{Role: loop.RoleUser, Content: "Building local AI tools."},
-			{Role: loop.RoleAssistant, Content: "Tell me more."},
-			{Role: loop.RoleUser, Content: "It's about composability."},
-			{Role: loop.RoleUser, Content: config.DraftPrompt}, // should be excluded
-		},
 	}
 
 	transcript := m.interviewTranscript()

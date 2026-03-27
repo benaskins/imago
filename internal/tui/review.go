@@ -6,9 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
-
+	face "github.com/benaskins/axon-face"
 	loop "github.com/benaskins/axon-loop"
 
 	"github.com/benaskins/imago/internal/config"
@@ -28,35 +26,33 @@ func (m Model) transitionToReview() (tea.Model, tea.Cmd) {
 	m.finalMarkdown = assembleDraft(m.sections)
 	m.reviewHistory = nil
 	m.reviewEntries = nil
-	m.waiting = false
+	m.Waiting = false
 	m.draftError = ""
 
-	m.input.Reset()
-	m.input.Placeholder = "type feedback or /done to finish..."
-	m.input.Focus()
+	m.Input.Reset()
+	m.Input.Placeholder = "type feedback or /done to finish..."
+	m.Input.Focus()
 
 	slog.Info("entering final review", "article_length", len(m.finalMarkdown))
-	m.refreshReviewViewport()
+	m.showReview()
 	return m, nil
 }
 
 func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "enter":
-			if m.waiting {
-				break
+			if m.Waiting {
+				return m, nil
 			}
-			text := strings.TrimSpace(m.input.Value())
+			text := strings.TrimSpace(m.Input.Value())
 			if text == "" {
-				break
+				return m, nil
 			}
-			m.input.Reset()
+			m.Input.Reset()
 
 			if text == "/done" {
 				slog.Info("final review complete")
@@ -67,11 +63,10 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					slog.Error("failed to write draft", "error", err)
 					m.draftError = fmt.Sprintf("Failed to save: %v", err)
-					m.refreshReviewViewport()
+					m.showReview()
 					return m, nil
 				}
 				slog.Info("draft saved", "path", path)
-				// Print path after alt-screen exits so user can see it
 				fmt.Printf("\nDraft saved to %s\n", path)
 				return m, tea.Quit
 			}
@@ -82,39 +77,27 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Role:    loop.RoleUser,
 				Content: text,
 			})
-			m.reviewEntries = append(m.reviewEntries, chatEntry{
-				role:    "user",
-				content: text,
+			m.reviewEntries = append(m.reviewEntries, face.Entry{
+				Role:    face.RoleUser,
+				Content: text,
 			})
-			m.waiting = true
+			m.Waiting = true
 			m.draftError = ""
-			m.refreshReviewViewport()
+			m.showReview()
 			return m, m.sendReview()
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		inputHeight := 5
-		statusHeight := 1
-
-		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-inputHeight-statusHeight)
-			m.viewport.YPosition = 0
-			m.ready = true
-		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - inputHeight - statusHeight
-		}
-		m.input.SetWidth(msg.Width - 2)
-		m.refreshReviewViewport()
+		m.Chat.HandleResize(msg)
+		m.showReview()
+		return m, nil
 
 	case reviewMsg:
 		if msg.err != nil {
 			slog.Error("review error", "error", msg.err)
 			m.draftError = msg.err.Error()
-			m.waiting = false
-			m.refreshReviewViewport()
+			m.Waiting = false
+			m.showReview()
 			return m, nil
 		}
 
@@ -123,30 +106,24 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Role:    loop.RoleAssistant,
 			Content: msg.content,
 		})
-		m.reviewEntries = append(m.reviewEntries, chatEntry{
-			role:    "agent",
-			content: msg.content,
+		m.reviewEntries = append(m.reviewEntries, face.Entry{
+			Role:    face.RoleAgent,
+			Content: msg.content,
 		})
 
-		// If the response looks like a full article (has headings), update the article
+		// If the response looks like a full article (has headings), update it
 		if strings.Contains(msg.content, "\n## ") || strings.HasPrefix(msg.content, "# ") {
 			m.finalMarkdown = msg.content
 			slog.Info("article updated from review", "length", len(msg.content))
 		}
 
-		m.waiting = false
-		m.refreshReviewViewport()
+		m.Waiting = false
+		m.showReview()
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
+	cmd := m.Chat.UpdateInput(msg)
+	return m, cmd
 }
 
 func (m Model) sendReview() tea.Cmd {
@@ -195,72 +172,49 @@ func (m Model) sendReview() tea.Cmd {
 	}
 }
 
-func (m *Model) refreshReviewViewport() {
-	var sb strings.Builder
-	w := m.width
-	if w <= 0 {
-		w = 80
-	}
-	contentWidth := w - 4
-	if contentWidth < 20 {
-		contentWidth = 20
-	}
+// showReview rebuilds the Chat entries to display the review state.
+func (m *Model) showReview() {
+	m.Entries = nil
 
-	// Error state
-	if m.draftError != "" && !m.waiting {
-		sb.WriteString(headerStyle.Render("Review error"))
-		sb.WriteString("\n\n")
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(m.draftError))
-		sb.WriteString("\n")
-		m.viewport.SetContent(sb.String())
+	if m.draftError != "" && !m.Waiting {
+		m.Chat.AppendEntry(face.Entry{
+			Role:    face.RoleAgent,
+			Content: fmt.Sprintf("Error: %s", m.draftError),
+		})
+		m.RefreshViewport()
 		return
 	}
 
-	sb.WriteString(headerStyle.Render("Final review"))
-	sb.WriteString("\n\n")
-
-	// Render the full article
-	rendered := renderMarkdown(m.finalMarkdown, w)
-	bordered := sectionBorderStyle.Width(contentWidth).Render(rendered)
-	sb.WriteString(bordered)
-	sb.WriteString("\n")
+	// Show the full article
+	m.Chat.AppendEntry(face.Entry{
+		Role:    face.RoleAgent,
+		Content: fmt.Sprintf("Final review\n\n---\n\n%s\n\n---\n\ntype feedback | /done to finish", m.finalMarkdown),
+	})
 
 	// Show review conversation
 	for _, e := range m.reviewEntries {
-		sb.WriteString("\n")
-		switch e.role {
-		case "user":
-			sb.WriteString(userStyle.Render("you") + " ")
-			sb.WriteString(wordWrap(e.content, contentWidth-5))
-			sb.WriteString("\n")
-		case "agent":
-			sb.WriteString(agentLabelStyle.Render("imago") + " ")
-			preview := revisionPreview(e.content)
-			sb.WriteString(agentStyle.Width(contentWidth - 7).Render(preview))
-			sb.WriteString("\n")
+		if e.Role == face.RoleAgent {
+			m.Chat.AppendEntry(face.Entry{
+				Role:    face.RoleAgent,
+				Content: revisionPreview(e.Content),
+			})
+		} else {
+			m.Chat.AppendEntry(e)
 		}
 	}
 
-	if m.waiting {
-		sb.WriteString("\n")
-		sb.WriteString(statusStyle.Render("reviewing..."))
+	if m.Waiting {
+		m.Chat.AppendEntry(face.Entry{Role: face.RoleAction, Content: "reviewing..."})
 	}
 
-	m.viewport.SetContent(sb.String())
-	m.viewport.GotoBottom()
+	m.RefreshViewport()
 }
 
 func (m Model) viewReview() string {
-	model := modelStyle.Render(m.currentModel())
-	status := statusStyle.Render("type feedback | /done to finish | ctrl+c quit") + "  " + model
-	if m.waiting {
-		status = statusStyle.Render("thinking...") + "  " + model
+	model := m.Styles.Model.Render(m.currentModel())
+	status := m.Styles.Status.Render("type feedback | /done to finish | ctrl+c quit") + "  " + model
+	if m.Waiting {
+		status = m.Styles.Status.Render("thinking...") + "  " + model
 	}
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		m.viewport.View(),
-		status,
-		m.input.View(),
-	)
+	return m.Chat.View(status)
 }
