@@ -1,159 +1,143 @@
 # Imago Design
 
-Imago is an interactive CLI that produces blog posts from structured interviews. It runs locally, uses local LLMs via Ollama, and submits drafts to the synd publishing pipeline.
+Imago is an interactive CLI that produces blog posts from structured interviews. It runs as a Bubble Tea TUI, uses multiple LLM backends, and saves finished drafts to disk.
 
 ## What it does
 
-You run `imago` when you want to write a post. It interviews you, researches as needed, then produces a draft for review. Two phases, clean boundary between them.
+Two modes, same two-phase flow.
 
-**Phase 1 — Interview.** Imago asks questions, follows threads, pushes back when answers sound rehearsed or generic. It can use tools mid-interview — fetch web pages, read existing posts for context, look up details. Tool use is visible in the TUI. The interview ends when imago has enough material or you say you're done.
+**`imago`** (interview mode). You run it when you want to write a post. It interviews you using a research journalist persona, can use tools mid-conversation to look things up, then produces a draft for section-by-section review.
 
-**Phase 2 — Draft review.** Imago produces a full draft, then presents it section by section. For each section you can keep, revise, or ask it to rewrite. When you approve the last section, it submits to synd as a draft via the server API.
+**`imago weekly`** (weekly update mode). Collects git activity across local and remote repos, scans for new sites, then interviews you about the week's work with the activity report as context. Produces a weekly update post for generativeplane.com.
+
+Both modes follow the same pipeline: interview, draft, section review, final review, save to disk.
 
 ## Architecture
 
 ```
 imago (CLI binary)
-├── TUI          — Bubble Tea reactive terminal UI
-├── axon-loop    — LLM conversation loop with tool dispatch
-├── axon-talk    — Ollama adapter for local inference
-├── axon-memo    — editorial memory across sessions (agent slug: imago)
-└── axon-tool    — tool definitions for research and publishing
+├── cmd/imago          entry point, client selection, mode dispatch
+├── internal/tui       Bubble Tea reactive terminal UI (interview, draft, review phases)
+├── internal/config    model config, system prompts, draft prompts
+├── internal/session   JSON session persistence (~/.local/share/imago/sessions/)
+├── internal/collect   git activity collection for weekly mode
+├── internal/logging   structured logging setup
+└── tools/             axon-tool definitions for research and publishing
 ```
 
-Imago is an assembled application, not a library. It composes axon modules but is not an axon module itself.
-
-## TUI
-
-Bubble Tea (charmbracelet/bubbletea) reactive TUI. Two distinct screens:
-
-**Interview screen.** Conversation view — imago's questions and your responses, rendered with Lip Gloss styling. Tool use appears as a single collapsed line (e.g. `↳ fetching generativeplane.com/posts/...`) that can be expanded. Standard text input at the bottom.
-
-**Draft screen.** Each section rendered as styled markdown via Glamour. Controls per section: keep, or type a directive to revise ("cut the last sentence", "add the detail about 4o"). Imago rewrites and re-renders. Repeat until you move on. Final section approval submits to synd.
-
-## LLM strategy
-
-Two models, switched per-phase via axon-loop's per-request model field:
-
-- **Interview phase:** `qwen3:32b` — fast responses, keeps conversational momentum
-- **Draft phase:** `qwen3:235b` — stronger synthesis and writing, slower is acceptable
-
-Both run locally on Ollama. The axon-talk Ollama adapter handles the connection. Model names are configurable.
-
-## Tools
-
-Defined as `tool.ToolDef` implementations:
-
-| Tool | Purpose |
-|------|---------|
-| `read_post` | Read an existing post for tone/context reference |
-| `list_posts` | List published posts on the site |
-| `fetch_page` | Fetch and extract content from a URL |
-| `search` | Search the web via SearXNG |
-| `recall` | Recall memories from past interviews via axon-memo |
-| `read_file` | Read a local file — source code, config, design docs |
-| `git_log` | Check recent commit history for a repo |
-| `aurelia_status` | Query running services, health, uptime |
-| `aurelia_show` | Get details about a specific service |
-| `lamina` | Run lamina CLI commands — repo status, dependency graph, health checks |
-| `claude` | Spawn a Claude Code session for deep code research |
-| `submit_draft` | Submit finished draft to synd server API |
-
-axon-tool already provides `PageFetcher` and `SearXNG` search. `read_post` and `list_posts` read from the site directory. `aurelia_status` and `aurelia_show` shell out to the aurelia CLI. `submit_draft` calls the synd HTTP API.
-
-### Claude research tasks
-
-The `claude` tool uses axon-task's executor in-process — the same pattern as axon-chat. An embedded executor with a research-oriented prompt builder spawns Claude Code as a subprocess in `--print` mode with read-only permissions (`Read`, `Glob`, `Grep`). No `Edit`, no `Write`, no destructive `Bash` — the journalist's source can read the codebase but not change it.
-
-This lets imago delegate technical questions ("how does the Cloudflare deploy work in axon-synd?") to Claude, which reads the code and reports back. The result appears in the TUI as a collapsed tool use, same as any other tool.
-
-## Editorial memory
-
-Imago gets its own agent slug (`imago`) in axon-memo. Memories accumulate across sessions:
-
-- **Semantic / durable** — voice preferences, editorial rules (e.g. "no gendered pronouns for AI", "unsentimental, let strange details in"), tone description
-- **Episodic** — past interview topics, what angles worked, what got cut
-- **Corrections** — editorial feedback from draft review ("that's a trope", "too sentimental") stored as durable semantic memories with high importance
-
-These memories are injected into the system prompt at the start of each session via axon-memo's recall API. The voice develops over time through accumulated corrections — the same mechanism as any axon-memo agent.
-
-## System prompt
-
-The system prompt establishes imago's role:
-
-- You are a journalist conducting an interview to produce a blog post
-- You ask one question at a time
-- You follow interesting threads and push back on rehearsed or generic answers
-- You have access to tools for research — use them when a claim needs context or a reference would strengthen the piece
-- You do not write during the interview — you gather material
-- When you have enough, you say so and transition to drafting
-
-Editorial memories are appended to the system prompt at session start.
-
-## Voice development
-
-The voice is not configured — it emerges from accumulated editorial feedback. Three mechanisms:
-
-**Keep signals.** When a section is approved without revision, imago extracts why it worked at end of session — sentence structure, register, what grounded what. These are stored as episodic memories in axon-memo.
-
-**Published delta.** After a post is published via synd, imago reads the final version and compares it to the submitted draft. Revisions made between approval and publication are a learning signal — stored as episodic memories.
-
-**Consolidation.** axon-memo's consolidation pipeline identifies patterns across episodic memories and distills them into durable semantic memories. Individual corrections ("too sentimental", "that's a trope") consolidate into editorial principles ("prefer understatement", "name strange details without explaining their significance").
-
-The feedback loop:
-
-```
-interview → draft → corrections (episodic) → publication → delta (episodic)
-                                    ↓
-                            consolidation (periodic)
-                                    ↓
-                         editorial principles (semantic/durable)
-                                    ↓
-                    injected into next session's system prompt
-```
-
-The voice emerges from the gap between what imago produces and what the user accepts. The agent finds the register by watching the user edit.
-
-## Synd integration
-
-Draft submission uses the existing synd server API:
-
-```
-POST /api/posts
-{
-  "kind": "long",
-  "body": "<markdown>",
-  "title": "<title>",
-  "abstract": "<abstract>",
-  "tags": [...]
-}
-```
-
-The synd server handles the rest — Signal notification, approval gate, publishing, Cloudflare deploy, syndication.
-
-## Dependencies
+### Dependencies
 
 | Module | Version | Purpose |
 |--------|---------|---------|
-| axon-loop | latest | Conversation loop with tool dispatch |
-| axon-talk | latest | Ollama LLM adapter |
-| axon-tool | latest | Tool definition primitives + PageFetcher |
-| axon-memo | latest | Long-term editorial memory |
-| axon-task | latest | Claude Code research task executor |
-| bubbletea | latest | Reactive terminal UI framework |
-| lipgloss | latest | Terminal styling |
-| glamour | latest | Markdown rendering in terminal |
+| axon-loop | v0.6.0 | Conversation loop with streaming and tool dispatch |
+| axon-talk | v0.4.2 | Ollama, Cloudflare Workers AI, and Anthropic adapters |
+| axon-tool | v0.1.6 | Tool definition primitives, PageFetcher |
+| axon-wire | v0.0.0 | HTTP client that routes through wire proxy |
+| bubbletea | v1.3.10 | Reactive terminal UI framework |
+| lipgloss | v1.1.1 | Terminal styling |
+| glamour | v1.0.0 | Markdown rendering in terminal |
+| bubbles | v1.0.0 | textarea, viewport components |
 
-## Implementation plan
+axon-talk, axon-tool, and axon-wire use local `replace` directives pointing to `/Users/benaskins/dev/lamina/`.
 
-Each step validates that axon modules compose cleanly. Friction points surface here.
+## LLM clients
 
-1. **Bubble Tea scaffold** — basic chat input/output with Lip Gloss styling, no LLM. Proves the TUI framework works.
-2. **axon-loop + axon-talk/ollama** — interview conversation end-to-end. Type a message, get a response from qwen3:32b, streamed into the TUI. Proves loop and talk compose.
-3. **axon-tool integration** — read_file, git_log, fetch_page, search, list_posts, read_post. Tool calls visible in TUI as collapsed lines. Proves tool dispatch works inside Bubble Tea's event loop.
-4. **Infrastructure tools** — aurelia_status, aurelia_show, lamina. Shell out to CLIs, capture output.
-5. **axon-task / claude** — embed executor in-process, research-only prompt builder, read-only permissions. Proves axon-task composes outside axon-chat.
-6. **axon-memo** — recall at session start (inject editorial memories into system prompt), extract at session end (keep signals, corrections). Proves memo composes as a client library.
-7. **Draft phase UI** — switch to Glamour-rendered markdown, section-by-section review with directives. Model switch to qwen3:235b.
-8. **Synd integration** — submit_draft tool calls synd server API. End-to-end: interview → draft → submit → Signal notification.
-9. **Voice development loop** — published delta comparison, consolidation trigger. The feedback loop that builds editorial judgement over time.
+Three providers, selected by environment:
+
+| Provider | Env vars required | Used for |
+|----------|-------------------|----------|
+| **Ollama** | (default fallback) | Regular interview mode, local inference |
+| **Cloudflare Workers AI** | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_AXON_GATE_TOKEN` | Regular mode via axon-gate gateway |
+| **Anthropic (via CF AI Gateway)** | `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_AI_GATEWAY_TOKEN` | Weekly mode, Opus for both phases |
+| **Anthropic (direct)** | `ANTHROPIC_API_KEY` | Weekly mode fallback (no gateway) |
+
+### Model config
+
+| Mode | Interview model | Draft model |
+|------|----------------|-------------|
+| Regular (Ollama) | qwen3:32b | qwen3:32b |
+| Regular (Cloudflare) | @cf/qwen/qwen3-30b-a3b-fp8 | @cf/qwen/qwen3-30b-a3b-fp8 |
+| Weekly | claude-opus-4-6 (configurable via `IMAGO_DRAFT_MODEL`) | same |
+
+## TUI
+
+Bubble Tea TUI with three phases:
+
+**Interview phase.** Conversation view with imago's questions and your responses, styled with Lip Gloss. Tool use appears as collapsed lines (e.g. `↳ search query=...`) expandable with Tab. Text input at the bottom. Type `/draft` to transition.
+
+**Draft phase.** LLM generates a full draft from the interview transcript. The draft is split into sections by markdown headings. Each section rendered via Glamour. Controls: `/keep` to approve, or type feedback to revise. Revision uses a separate conversation with full context (interview transcript, full draft, current section). When all sections are approved, transitions to review.
+
+**Review phase.** Full assembled article rendered in a bordered viewport. Type feedback for whole-article revisions, `/done` to save. Draft is written to `~/Documents/imago/<slug>.md`.
+
+## Tools
+
+15 tools defined in `tools/tools.go`:
+
+| Tool | Purpose |
+|------|---------|
+| `repo_overview` | Full repo overview: tree, commits, key docs. Works with local paths and GitHub repos |
+| `read_files` | Read multiple files in a single call |
+| `read_file` | Read a single local file |
+| `list_dir` | List directory contents |
+| `git_log` | Recent commit history for a repo |
+| `read_post` | Read an existing post from the site directory |
+| `list_posts` | List published posts on the site |
+| `fetch_page` | Fetch and extract content from a URL (routes through axon-wire proxy) |
+| `search` | Search the web via SearXNG |
+| `aurelia_status` | Query running services via aurelia CLI |
+| `aurelia_show` | Get details about a specific aurelia service |
+| `lamina` | Run lamina CLI commands |
+| `submit_draft` | Submit finished draft to synd server API |
+| `recall` | Recall memories from axon-memo |
+| `research` | Dispatch parallel URL fetches via research worker (conditional on `AXON_DISPATCH_URL`) |
+
+### Tool config (environment)
+
+| Env var | Purpose |
+|---------|---------|
+| `SYND_SITE_DIR` | Path to generativeplane.com site directory |
+| `SYND_SERVICE_URL` | Synd server base URL |
+| `~/.config/synd/token` | Auth token for synd API (read from file) |
+| `MEMO_SERVICE_URL` | axon-memo service URL |
+| `SEARXNG_URL` | SearXNG instance URL |
+| `AXON_DISPATCH_URL` | Research dispatch worker URL |
+| `AXON_WIRE_TOKEN` | Shared auth token for wire proxy / dispatch |
+| `AXON_WIRE_URL` | Wire proxy URL (used by axon-wire HTTP client) |
+
+## Session persistence
+
+Sessions are saved as JSON to `~/.local/share/imago/sessions/<timestamp>.json` after every turn. On startup, imago checks for an incomplete session matching the current mode and offers to resume.
+
+Session state includes: messages, phase, sections, approved flags, session kind (post/weekly).
+
+## Weekly collection
+
+The `collect` package (`internal/collect/`) gathers git activity for weekly updates:
+
+1. Scans `~/dev` (or `$DEV`) for git repos up to 4 levels deep
+2. SSHs to `hestia` to scan `~/dev` there
+3. Merges and deduplicates repos by name across machines
+4. Detects new repos and new sites created since the last weekly post
+5. Derives the "since" date from the most recent `weekly-*.md` file in the site directory
+6. Produces a structured markdown report injected into the weekly system prompt
+
+## System prompts
+
+### Regular mode
+Research journalist persona. Interviews the builder, researches projects mid-conversation using tools, asks one question at a time, pushes back on generic answers. 8-10 substantive exchanges before suggesting draft transition.
+
+### Weekly mode
+Same journalist persona but with the activity report pre-loaded. Knows what happened, asks about why it matters. Priority repos (lamina, aurelia, axon-*, public sites) discussed first. Editorial direction: group by theme not repo, connect to axon, highlight [NEW] repos and sites.
+
+### Draft prompts
+Both modes produce first-person blog posts in the subject's voice. Weekly mode adds structure requirements (opening reflection, themed sections, closing editorial) and linking rules (GitHub repos, sites, external tools).
+
+## What's not built yet
+
+From the original design, these are not yet implemented:
+
+- **axon-memo integration**: `recall` tool is defined but editorial memory (voice development loop, keep signals, corrections, consolidation) is not wired up
+- **axon-task / claude research**: the `claude` tool for spawning read-only Claude Code sessions is not implemented
+- **synd submission from TUI**: `submit_draft` tool exists but the review phase saves to disk rather than submitting via API
+- **Phase-specific model switching** in regular mode: both phases currently use the same model (draft model override only works in weekly mode)
+- `internal/draft/` and `internal/interview/` directories exist but are empty
