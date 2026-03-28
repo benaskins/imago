@@ -22,7 +22,7 @@ func SystemPrompt() string {
 type Provider string
 
 const (
-	ProviderOllama     Provider = "ollama"
+	ProviderOpenAI     Provider = "openai"
 	ProviderCloudflare Provider = "cloudflare"
 	ProviderAnthropic  Provider = "anthropic"
 )
@@ -46,13 +46,13 @@ func DefaultModelConfig() ModelConfig {
 	if os.Getenv("CLOUDFLARE_ACCOUNT_ID") != "" && os.Getenv("CLOUDFLARE_AXON_GATE_TOKEN") != "" {
 		return CloudflareModelConfig()
 	}
-	return OllamaModelConfig()
+	return OpenAIModelConfig()
 }
 
-// OllamaModelConfig returns settings for local Ollama inference.
-func OllamaModelConfig() ModelConfig {
+// OpenAIModelConfig returns settings for a local OpenAI-compatible server (e.g. llama-server).
+func OpenAIModelConfig() ModelConfig {
 	return ModelConfig{
-		Provider:       ProviderOllama,
+		Provider:       ProviderOpenAI,
 		InterviewModel: "qwen3:32b",
 		DraftModel:     "qwen3:32b",
 		InterviewOptions: map[string]any{

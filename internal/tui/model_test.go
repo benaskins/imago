@@ -21,7 +21,7 @@ func (c stubClient) Chat(_ context.Context, _ *loop.Request, fn func(loop.Respon
 }
 
 func TestNewModel(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 
 	if m.phase != phaseInterview {
 		t.Errorf("expected interview phase, got %d", m.phase)
@@ -42,7 +42,7 @@ func TestNewModelResumeSession(t *testing.T) {
 		{Role: loop.RoleAssistant, Content: "hi there"},
 	}
 
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, sess, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, sess, t.TempDir())
 
 	if len(m.Messages) != 3 {
 		t.Errorf("expected 3 messages, got %d", len(m.Messages))
@@ -53,7 +53,7 @@ func TestNewModelResumeSession(t *testing.T) {
 }
 
 func TestViewInterview(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 
 	// Initialize viewport with a window size
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
@@ -66,7 +66,7 @@ func TestViewInterview(t *testing.T) {
 }
 
 func TestWithWeeklyMode(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 	m.WithWeeklyMode("weekly system prompt")
 
 	if m.sessionKind != "weekly" {
@@ -81,7 +81,7 @@ func TestWithWeeklyMode(t *testing.T) {
 }
 
 func TestPhaseSwitch(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 
@@ -95,7 +95,7 @@ func TestPhaseSwitch(t *testing.T) {
 }
 
 func TestShowCurrentSection(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 
@@ -125,7 +125,7 @@ func TestShowCurrentSection(t *testing.T) {
 }
 
 func TestShowReview(t *testing.T) {
-	m := New(stubClient{}, config.OllamaModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 

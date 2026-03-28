@@ -11,7 +11,7 @@ import (
 	loop "github.com/benaskins/axon-loop"
 	"github.com/benaskins/axon-talk/anthropic"
 	cf "github.com/benaskins/axon-talk/cloudflare"
-	"github.com/benaskins/axon-talk/ollama"
+	"github.com/benaskins/axon-talk/openai"
 	"github.com/benaskins/axon-wire"
 
 	face "github.com/benaskins/axon-face"
@@ -141,7 +141,7 @@ func main() {
 }
 
 // selectLLMClient returns a Cloudflare Workers AI client if the gateway
-// env vars are set, otherwise falls back to local Ollama.
+// env vars are set, otherwise falls back to a local OpenAI-compatible server (e.g. llama-server).
 func selectLLMClient() loop.LLMClient {
 	accountID := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	token := os.Getenv("CLOUDFLARE_AXON_GATE_TOKEN")
@@ -156,13 +156,10 @@ func selectLLMClient() loop.LLMClient {
 		return cf.NewClient(baseURL, token, opts...)
 	}
 
-	client, err := ollama.NewClientFromEnvironment()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to connect to ollama: %v\n", err)
-		os.Exit(1)
-	}
-	slog.Info("using Ollama for inference")
-	return client
+	baseURL := envOrDefault("LLM_BASE_URL", "http://localhost:8080/v1")
+	apiKey := os.Getenv("LLM_API_KEY")
+	slog.Info("using OpenAI-compatible server", "base_url", baseURL)
+	return openai.NewClient(baseURL, apiKey)
 }
 
 // selectAnthropicClient returns a Claude client via Cloudflare AI Gateway,
