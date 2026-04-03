@@ -40,9 +40,9 @@ type Config struct {
 func All(cfg Config) map[string]tool.ToolDef {
 	// Only route fetch_page through the wire proxy — it fetches from the
 	// internet. SearXNG and other local services stay on direct HTTP.
-	var fetchOpts []tool.PageFetcherOption
+	var fetchOpts []pageFetcherOption
 	if cfg.HTTPClient != nil {
-		fetchOpts = append(fetchOpts, tool.WithHTTPClient(cfg.HTTPClient))
+		fetchOpts = append(fetchOpts, withHTTPClient(cfg.HTTPClient))
 	}
 
 	defs := []tool.ToolDef{
@@ -567,7 +567,7 @@ func ListPosts(siteDir string) tool.ToolDef {
 
 // FetchPage returns a tool that fetches a URL and returns extracted text.
 // It uses axon-tool's PageFetcher without LLM extraction (raw text mode).
-func FetchPage(opts ...tool.PageFetcherOption) tool.ToolDef {
+func FetchPage(opts ...pageFetcherOption) tool.ToolDef {
 	return tool.ToolDef{
 		Name:        "fetch_page",
 		Description: "Fetch a web page and return its extracted text content. Use to read articles, documentation, or any web page.",
@@ -586,8 +586,8 @@ func FetchPage(opts ...tool.PageFetcherOption) tool.ToolDef {
 			if urlStr == "" {
 				return tool.ToolResult{Content: "Error: url is required."}
 			}
-			fetcher := tool.NewPageFetcher(nil, opts...) // no LLM extraction
-			text, err := fetcher.FetchAndExtract(ctx.Ctx, urlStr, "")
+			fetcher := newPageFetcher(opts...)
+			text, err := fetcher.fetchAndExtract(ctx.Ctx, urlStr)
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error fetching page: %v", err)}
 			}
@@ -597,7 +597,7 @@ func FetchPage(opts ...tool.PageFetcherOption) tool.ToolDef {
 }
 
 // Search returns a tool that searches the web via SearXNG.
-func Search(searxngURL string, opts ...tool.SearXNGOption) tool.ToolDef {
+func Search(searxngURL string) tool.ToolDef {
 	return tool.ToolDef{
 		Name:        "search",
 		Description: "Search the web using SearXNG. Returns titles, URLs, and snippets for the top results.",
@@ -619,8 +619,8 @@ func Search(searxngURL string, opts ...tool.SearXNGOption) tool.ToolDef {
 			if searxngURL == "" {
 				return tool.ToolResult{Content: "Error: SearXNG URL not configured."}
 			}
-			client := tool.NewSearXNGClient(searxngURL, opts...)
-			results, err := client.Search(ctx.Ctx, query, 5)
+			client := newSearXNGClient(searxngURL)
+			results, err := client.search(ctx.Ctx, query, 5)
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Search failed: %v", err)}
 			}
