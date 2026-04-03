@@ -1,6 +1,6 @@
-// Package collect gathers git activity across repositories for weekly
-// update posts. It scans local and remote machines, deduplicates repos,
-// and produces a structured markdown report.
+// Package collect gathers git activity across local repositories for weekly
+// update posts. It scans the local dev directory and produces a structured
+// markdown report.
 package collect
 
 import (
@@ -26,7 +26,7 @@ type Report struct {
 type RepoActivity struct {
 	Name      string
 	Path      string
-	Machine   string // "local", "hestia", or "local, hestia"
+	Machine   string // "local"
 	Commits   []string
 	Diffstat  string
 	Tags      []string
@@ -40,8 +40,7 @@ type Config struct {
 	DevDir  string // local ~/dev directory
 }
 
-// Run performs the full collection pass: local scan, remote scan,
-// dedup, and markdown generation.
+// Run performs the full collection pass: local scan and markdown generation.
 func Run(cfg Config) (*Report, error) {
 	since := deriveSinceDate(cfg.SiteDir)
 
@@ -50,17 +49,9 @@ func Run(cfg Config) (*Report, error) {
 		return nil, fmt.Errorf("collect: local scan: %w", err)
 	}
 
-	remoteRepos, err := scanRemote("hestia", since)
-	if err != nil {
-		// Remote scan failure is non-fatal — report what we have.
-		remoteRepos = nil
-	}
-
-	merged := mergeRepos(localRepos, remoteRepos)
-
 	// Filter to repos with activity.
 	var active []RepoActivity
-	for _, r := range merged {
+	for _, r := range localRepos {
 		if r.CommitCount > 0 {
 			active = append(active, r)
 		}
@@ -131,108 +122,6 @@ func scanLocal(devDir string, since time.Time) ([]RepoActivity, error) {
 	return results, nil
 }
 
-// scanRemote discovers git repos on a remote machine via SSH.
-func scanRemote(host string, since time.Time) ([]RepoActivity, error) {
-	sinceStr := since.Format("2006-01-02")
-
-	// Single SSH command that discovers repos and gathers activity for each.
-	script := fmt.Sprintf(`
-set -e
-for gitdir in $(find ~/dev -name .git -type d -maxdepth 4 2>/dev/null); do
-  repo=$(dirname "$gitdir")
-  name=$(basename "$repo")
-  echo "===REPO=== $name"
-  echo "===PATH=== $repo"
-  cd "$repo"
-  count=$(git log --oneline --since="%s" 2>/dev/null | wc -l | tr -d ' ')
-  echo "===COUNT=== $count"
-  if [ "$count" -gt 0 ]; then
-    echo "===COMMITS==="
-    git log --oneline --since="%s" 2>/dev/null | head -50
-    echo "===DIFFSTAT==="
-    first=$(git log --reverse --since="%s" --format="%%H" 2>/dev/null | head -1)
-    if [ -n "$first" ]; then
-      git diff --stat "$first^..HEAD" 2>/dev/null || git diff --stat "$first..HEAD" 2>/dev/null || echo "(no diffstat)"
-    fi
-    echo "===TAGS==="
-    git tag --sort=-creatordate 2>/dev/null | head -5
-  fi
-  echo "===END==="
-done
-`, sinceStr, sinceStr, sinceStr)
-
-	cmd := exec.Command("ssh", host, "bash", "-c", fmt.Sprintf("'%s'", strings.ReplaceAll(script, "'", "'\\''")))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("ssh %s: %w: %s", host, err, string(out))
-	}
-
-	return parseRemoteOutput(string(out)), nil
-}
-
-// parseRemoteOutput parses the structured output from the SSH script.
-func parseRemoteOutput(output string) []RepoActivity {
-	var repos []RepoActivity
-	var current *RepoActivity
-	var section string
-
-	for _, line := range strings.Split(output, "\n") {
-		switch {
-		case strings.HasPrefix(line, "===REPO=== "):
-			if current != nil {
-				repos = append(repos, *current)
-			}
-			current = &RepoActivity{
-				Name:    strings.TrimPrefix(line, "===REPO=== "),
-				Machine: "hestia",
-			}
-			section = ""
-		case strings.HasPrefix(line, "===PATH=== "):
-			if current != nil {
-				current.Path = strings.TrimPrefix(line, "===PATH=== ")
-			}
-		case strings.HasPrefix(line, "===COUNT=== "):
-			if current != nil {
-				fmt.Sscanf(strings.TrimPrefix(line, "===COUNT=== "), "%d", &current.CommitCount)
-			}
-		case line == "===COMMITS===":
-			section = "commits"
-		case line == "===DIFFSTAT===":
-			section = "diffstat"
-		case line == "===TAGS===":
-			section = "tags"
-		case line == "===END===":
-			if current != nil {
-				repos = append(repos, *current)
-				current = nil
-			}
-			section = ""
-		default:
-			if current == nil {
-				continue
-			}
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-			switch section {
-			case "commits":
-				current.Commits = append(current.Commits, trimmed)
-			case "diffstat":
-				if current.Diffstat != "" {
-					current.Diffstat += "\n"
-				}
-				current.Diffstat += trimmed
-			case "tags":
-				current.Tags = append(current.Tags, trimmed)
-			}
-		}
-	}
-	if current != nil {
-		repos = append(repos, *current)
-	}
-	return repos
-}
 
 // discoverRepos finds git repositories under a root directory.
 func discoverRepos(root string) ([]string, error) {
@@ -342,46 +231,6 @@ func gatherActivity(repoPath string, since time.Time, machine string) RepoActivi
 	return activity
 }
 
-// mergeRepos deduplicates repos found on multiple machines by matching
-// on repo name. When the same repo exists on both machines, the commit
-// lists are merged and the machine field is updated.
-func mergeRepos(local, remote []RepoActivity) []RepoActivity {
-	byName := make(map[string]*RepoActivity)
-
-	for i := range local {
-		byName[local[i].Name] = &local[i]
-	}
-
-	for _, r := range remote {
-		if existing, ok := byName[r.Name]; ok {
-			// Same repo on both machines — merge.
-			existing.Machine = "local, hestia"
-			// Use the higher commit count (they should be similar
-			// if both are in sync, but take the max).
-			if r.CommitCount > existing.CommitCount {
-				existing.CommitCount = r.CommitCount
-				existing.Commits = r.Commits
-				existing.Diffstat = r.Diffstat
-			}
-			if len(r.Tags) > len(existing.Tags) {
-				existing.Tags = r.Tags
-			}
-			if r.IsNew && !existing.IsNew {
-				existing.IsNew = true
-			}
-		} else {
-			// Only on remote.
-			rc := r
-			byName[r.Name] = &rc
-		}
-	}
-
-	var result []RepoActivity
-	for _, v := range byName {
-		result = append(result, *v)
-	}
-	return result
-}
 
 // detectNewSites checks for site directories that were created recently.
 func detectNewSites(devDir string, since time.Time) []string {
@@ -435,8 +284,6 @@ func renderMarkdown(report *Report) string {
 			newTag = " [NEW]"
 		}
 		fmt.Fprintf(&b, "#### %s (%d commits)%s\n", r.Name, r.CommitCount, newTag)
-		fmt.Fprintf(&b, "- Machines: %s\n", r.Machine)
-
 		fmt.Fprintf(&b, "- Key commits:\n")
 		shown := r.Commits
 		if len(shown) > 10 {
@@ -475,7 +322,7 @@ func renderMarkdown(report *Report) string {
 	if len(newRepos) > 0 {
 		fmt.Fprintf(&b, "### New repos\n\n")
 		for _, r := range newRepos {
-			fmt.Fprintf(&b, "- %s (%d commits) — %s\n", r.Name, r.CommitCount, r.Machine)
+			fmt.Fprintf(&b, "- %s (%d commits)\n", r.Name, r.CommitCount)
 		}
 		fmt.Fprintln(&b)
 	}
