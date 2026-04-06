@@ -4,13 +4,18 @@ go 1.26.1
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.1
-	github.com/benaskins/axon-face v0.0.0-00010101000000-000000000000
-	github.com/benaskins/axon-loop v0.7.0
-	github.com/benaskins/axon-talk v0.5.1
+	github.com/benaskins/axon-face v0.1.2
+	github.com/benaskins/axon-loop v0.7.5
+	github.com/benaskins/axon-talk v0.9.0
 	github.com/benaskins/axon-tool v0.3.0
-	github.com/benaskins/axon-wire v0.0.0
+	github.com/benaskins/axon-wire v0.1.5
 	github.com/charmbracelet/bubbletea v1.3.10
 	golang.org/x/net v0.46.0
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 )
 
 require (
@@ -44,15 +49,3 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )
-
-replace github.com/benaskins/axon => ../../axon
-
-replace github.com/benaskins/axon-face => ../../axon-face
-
-replace github.com/benaskins/axon-loop => ../../axon-loop
-
-replace github.com/benaskins/axon-talk => ../../axon-talk
-
-replace github.com/benaskins/axon-tool => ../../axon-tool
-
-replace github.com/benaskins/axon-wire => ../../axon-wire
