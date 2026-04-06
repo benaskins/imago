@@ -172,7 +172,7 @@ func gatherActivity(repoPath string, since time.Time, machine string) RepoActivi
 	sinceStr := since.Format("2006-01-02")
 
 	// Commits since date.
-	cmd := exec.Command("git", "log", "--oneline", "--since="+sinceStr)
+	cmd := exec.Command("git", "log", "--oneline", "--since="+sinceStr) // #nosec G204 -- git invoked with derived date arg
 	cmd.Dir = repoPath
 	if out, err := cmd.Output(); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -187,13 +187,13 @@ func gatherActivity(repoPath string, since time.Time, machine string) RepoActivi
 	}
 
 	// Diffstat.
-	cmd = exec.Command("git", "log", "--reverse", "--since="+sinceStr, "--format=%H")
+	cmd = exec.Command("git", "log", "--reverse", "--since="+sinceStr, "--format=%H") // #nosec G204 -- git invoked with derived date arg
 	cmd.Dir = repoPath
 	if out, err := cmd.Output(); err == nil {
 		hashes := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(hashes) > 0 && hashes[0] != "" {
 			first := hashes[0]
-			diffCmd := exec.Command("git", "diff", "--stat", first+"^..HEAD")
+			diffCmd := exec.Command("git", "diff", "--stat", first+"^..HEAD") // #nosec G204 -- git invoked with derived commit hash
 			diffCmd.Dir = repoPath
 			if diffOut, err := diffCmd.Output(); err == nil {
 				activity.Diffstat = strings.TrimSpace(string(diffOut))

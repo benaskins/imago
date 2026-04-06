@@ -174,7 +174,7 @@ func repoOverviewLocal(ctx *tool.ToolContext, dir string) tool.ToolResult {
 	keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
 	for _, name := range keyDocs {
 		path := filepath.Join(dir, name)
-		if data, err := os.ReadFile(path); err == nil {
+		if data, err := os.ReadFile(path); err == nil { // #nosec G304 -- reads known doc files from repo dir
 			sb.WriteString(fmt.Sprintf("\n## %s\n\n", name))
 			content := string(data)
 			if len(content) > 3000 {
@@ -194,7 +194,7 @@ func repoOverviewRemote(ctx *tool.ToolContext, nwo string) tool.ToolResult {
 
 	// File tree (top 2 levels via gh api)
 	sb.WriteString("## Directory tree\n\n")
-	cmd := exec.CommandContext(ctx.Ctx, "gh", "api",
+	cmd := exec.CommandContext(ctx.Ctx, "gh", "api", // #nosec G204 -- tool executor runs gh with user-provided repo
 		fmt.Sprintf("repos/%s/git/trees/HEAD?recursive=1", nwo),
 		"--jq", `.tree[] | select(.type == "blob" or .type == "tree") | .path`,
 	)
@@ -212,7 +212,7 @@ func repoOverviewRemote(ctx *tool.ToolContext, nwo string) tool.ToolResult {
 
 	// Recent commits
 	sb.WriteString("\n## Recent commits\n\n")
-	cmd = exec.CommandContext(ctx.Ctx, "gh", "api",
+	cmd = exec.CommandContext(ctx.Ctx, "gh", "api", // #nosec G204 -- tool executor runs gh with user-provided repo
 		fmt.Sprintf("repos/%s/commits?per_page=10", nwo),
 		"--jq", `.[] | (.sha[:7] + " " + (.commit.message | split("\n")[0]))`,
 	)
@@ -225,7 +225,7 @@ func repoOverviewRemote(ctx *tool.ToolContext, nwo string) tool.ToolResult {
 	// Key docs
 	keyDocs := []string{"README.md", "CLAUDE.md", "AGENTS.md"}
 	for _, name := range keyDocs {
-		cmd = exec.CommandContext(ctx.Ctx, "gh", "api",
+		cmd = exec.CommandContext(ctx.Ctx, "gh", "api", // #nosec G204 -- tool executor runs gh with user-provided repo
 			fmt.Sprintf("repos/%s/contents/%s", nwo, name),
 			"--jq", ".content",
 		)
@@ -322,7 +322,7 @@ func ReadFiles() tool.ToolDef {
 					continue
 				}
 				sb.WriteString(fmt.Sprintf("## %s\n\n", path))
-				data, err := os.ReadFile(path)
+				data, err := os.ReadFile(path) // #nosec G304 -- tool reads user-specified files by design
 				if err != nil {
 					sb.WriteString(fmt.Sprintf("Error: %v\n\n", err))
 					continue
@@ -363,7 +363,7 @@ func ReadFile() tool.ToolDef {
 			if path == "" {
 				return tool.ToolResult{Content: "Error: path is required."}
 			}
-			data, err := os.ReadFile(path)
+			data, err := os.ReadFile(path) // #nosec G304 -- tool reads user-specified files by design
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error reading file: %v", err)}
 			}
@@ -440,7 +440,7 @@ func GitLog() tool.ToolDef {
 			if count == "" {
 				count = "20"
 			}
-			cmd := exec.CommandContext(ctx.Ctx, "git", "log", "--oneline", "-"+count)
+			cmd := exec.CommandContext(ctx.Ctx, "git", "log", "--oneline", "-"+count) // #nosec G204 -- tool executor runs git with user-provided count
 			cmd.Dir = dir
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -489,7 +489,7 @@ func ReadPost(siteDir string) tool.ToolDef {
 			}
 
 			htmlPath := filepath.Join(postsDir, postID, "index.html")
-			data, err := os.ReadFile(htmlPath)
+			data, err := os.ReadFile(htmlPath) // #nosec G304 -- reads post file from configured site dir
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error reading post: %v", err)}
 			}
@@ -681,7 +681,7 @@ func AureliaShow() tool.ToolDef {
 			if service == "" {
 				return tool.ToolResult{Content: "Error: service is required."}
 			}
-			cmd := exec.CommandContext(ctx.Ctx, "aurelia", "show", service)
+			cmd := exec.CommandContext(ctx.Ctx, "aurelia", "show", service) // #nosec G204 -- tool executor runs aurelia with user-provided service name
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error running aurelia show: %v\n%s", err, string(out))}
@@ -712,7 +712,7 @@ func Lamina() tool.ToolDef {
 				return tool.ToolResult{Content: "Error: args is required."}
 			}
 			parts := strings.Fields(cmdArgs)
-			cmd := exec.CommandContext(ctx.Ctx, "lamina", parts...)
+			cmd := exec.CommandContext(ctx.Ctx, "lamina", parts...) // #nosec G204 -- tool executor runs lamina with user-provided args
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return tool.ToolResult{Content: fmt.Sprintf("Error running lamina: %v\n%s", err, string(out))}
@@ -1047,7 +1047,7 @@ func stripHTML(s string) (string, error) {
 // extractTitle reads an HTML file and returns the content of the <title> tag,
 // stripping any site suffix like " — Generative Plane".
 func extractTitle(htmlPath string) string {
-	data, err := os.ReadFile(htmlPath)
+	data, err := os.ReadFile(htmlPath) // #nosec G304 -- reads post file from configured site dir
 	if err != nil {
 		return "(untitled)"
 	}

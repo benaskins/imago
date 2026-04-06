@@ -39,7 +39,7 @@ func outputDir() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, "Documents", "imago")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -68,7 +68,7 @@ func writeDraft(markdown string) (string, error) {
 		}
 	}
 
-	if err := os.WriteFile(path, []byte(markdown), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(markdown), 0o600); err != nil {
 		return "", err
 	}
 	return path, nil
