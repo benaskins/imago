@@ -10,7 +10,6 @@ import (
 
 	loop "github.com/benaskins/axon-loop"
 	"github.com/benaskins/axon-talk/anthropic"
-	cf "github.com/benaskins/axon-talk/cloudflare"
 	"github.com/benaskins/axon-talk/openai"
 	"github.com/benaskins/axon-wire"
 
@@ -149,11 +148,11 @@ func selectLLMClient() loop.LLMClient {
 	if accountID != "" && token != "" {
 		baseURL := "https://gateway.ai.cloudflare.com/v1/" + accountID + "/axon-gate/workers-ai"
 		slog.Info("using Cloudflare Workers AI", "gateway", "axon-gate")
-		var opts []cf.Option
+		var opts []openai.Option
 		if gwToken := os.Getenv("CLOUDFLARE_AI_GATEWAY_TOKEN"); gwToken != "" {
-			opts = append(opts, cf.WithGatewayToken(gwToken))
+			opts = append(opts, openai.WithGatewayToken(gwToken))
 		}
-		return cf.NewClient(baseURL, token, opts...)
+		return openai.NewClient(baseURL, token, opts...)
 	}
 
 	baseURL := envOrDefault("LLM_BASE_URL", "http://localhost:8080/v1")
