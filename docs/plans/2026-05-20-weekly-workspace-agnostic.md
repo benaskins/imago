@@ -1,6 +1,6 @@
 # imago weekly: workspace-agnostic redesign
 
-**Status:** Drafted, not started
+**Status:** Complete (2026-05-20)
 **Date:** 2026-05-20
 **Source:** Brainstorm session (Claude Code transcript `f9192c3b...`, 20 May 15:47), revised 2026-05-20 to correct "monorepo" to "workspace".
 
