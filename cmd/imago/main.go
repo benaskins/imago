@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -135,7 +136,8 @@ func main() {
 
 		// Build weekly system prompt with collection data and previous post.
 		previousWeekly := collect.PreviousWeekly(cfg.SiteDir)
-		systemPrompt := config.WeeklySystemPrompt(report.Markdown, previousWeekly)
+		workspaceName := filepath.Base(workspacePath)
+		systemPrompt := config.WeeklySystemPrompt(workspaceName, workspacePath, report.Markdown, previousWeekly)
 		model.WithWeeklyMode(systemPrompt)
 
 		slog.Info("weekly mode", "model", mcfg.InterviewModel)
