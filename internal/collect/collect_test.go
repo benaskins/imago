@@ -66,7 +66,6 @@ func TestRenderMarkdown(t *testing.T) {
 				IsNew:       true,
 			},
 		},
-		NewSites: []string{"sailorgrift.com"},
 	}
 
 	md := renderMarkdown(report)
@@ -86,14 +85,49 @@ func TestRenderMarkdown(t *testing.T) {
 	if !strings.Contains(md, "### New repos") {
 		t.Error("should have new repos section")
 	}
-	if !strings.Contains(md, "### New sites published") {
-		t.Error("should have new sites section")
-	}
-	if !strings.Contains(md, "sailorgrift.com") {
-		t.Error("should list new sites")
-	}
 	if !strings.Contains(md, "Tags: v0.3.0") {
 		t.Error("should list tags")
+	}
+}
+
+func TestRenderMarkdown_NoNewSitesSection(t *testing.T) {
+	since, _ := time.Parse("2006-01-02", "2026-03-15")
+	report := &Report{
+		Since: since,
+		Repos: []RepoActivity{{Name: "r", Machine: "local", CommitCount: 1, Commits: []string{"abc x"}}},
+	}
+	md := renderMarkdown(report)
+	if strings.Contains(md, "New sites") {
+		t.Error("renderMarkdown should not emit a New sites section")
+	}
+}
+
+func TestRun_WorkspacePath_EmptyWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	report, err := Run(Config{WorkspacePath: workspace})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if len(report.Repos) != 0 {
+		t.Errorf("expected no active repos in empty workspace, got %d", len(report.Repos))
+	}
+}
+
+func TestRun_WorkspacePath_DiscoversRepos(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "repo-a", ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "repo-b", ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	repos, err := discoverRepos(workspace)
+	if err != nil {
+		t.Fatalf("discoverRepos: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Errorf("got %d repos under workspace, want 2: %v", len(repos), repos)
 	}
 }
 

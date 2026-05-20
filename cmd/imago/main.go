@@ -110,8 +110,8 @@ func main() {
 		// Run collection pass.
 		fmt.Println("Collecting activity data...")
 		report, err := collect.Run(collect.Config{
-			SiteDir: cfg.SiteDir,
-			DevDir:  envOrDefault("DEV", os.ExpandEnv("$HOME/dev")),
+			SiteDir:       cfg.SiteDir,
+			WorkspacePath: envOrDefault("DEV", os.ExpandEnv("$HOME/dev")),
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "collection failed: %v\n", err)

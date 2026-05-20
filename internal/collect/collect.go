@@ -16,37 +16,36 @@ import (
 
 // Report holds the collected activity data.
 type Report struct {
-	Since   time.Time
-	Repos   []RepoActivity
-	NewSites []string
+	Since    time.Time
+	Repos    []RepoActivity
 	Markdown string
 }
 
 // RepoActivity holds git activity for a single repository.
 type RepoActivity struct {
-	Name      string
-	Path      string
-	Machine   string // "local"
-	Commits   []string
-	Diffstat  string
-	Tags      []string
-	IsNew     bool
+	Name        string
+	Path        string
+	Machine     string // "local"
+	Commits     []string
+	Diffstat    string
+	Tags        []string
+	IsNew       bool
 	CommitCount int
 }
 
 // Config holds configuration for the collection pass.
 type Config struct {
-	SiteDir string // path to generativeplane.com site directory
-	DevDir  string // local ~/dev directory
+	SiteDir       string // path to generativeplane.com site directory (since-derivation, transitional)
+	WorkspacePath string // workspace root containing sibling git repos
 }
 
-// Run performs the full collection pass: local scan and markdown generation.
+// Run performs the full collection pass: workspace scan and markdown generation.
 func Run(cfg Config) (*Report, error) {
 	since := deriveSinceDate(cfg.SiteDir)
 
-	localRepos, err := scanLocal(cfg.DevDir, since)
+	localRepos, err := scanLocal(cfg.WorkspacePath, since)
 	if err != nil {
-		return nil, fmt.Errorf("collect: local scan: %w", err)
+		return nil, fmt.Errorf("collect: workspace scan: %w", err)
 	}
 
 	// Filter to repos with activity.
@@ -62,13 +61,9 @@ func Run(cfg Config) (*Report, error) {
 		return active[i].CommitCount > active[j].CommitCount
 	})
 
-	// Detect new sites.
-	newSites := detectNewSites(cfg.DevDir, since)
-
 	report := &Report{
-		Since:    since,
-		Repos:    active,
-		NewSites: newSites,
+		Since: since,
+		Repos: active,
 	}
 	report.Markdown = renderMarkdown(report)
 
@@ -232,40 +227,6 @@ func gatherActivity(repoPath string, since time.Time, machine string) RepoActivi
 }
 
 
-// detectNewSites checks for site directories that were created recently.
-func detectNewSites(devDir string, since time.Time) []string {
-	sitesDir := filepath.Join(devDir, "sites")
-	entries, err := os.ReadDir(sitesDir)
-	if err != nil {
-		return nil
-	}
-
-	var newSites []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		// Check if the git repo was created after the since date.
-		gitDir := filepath.Join(sitesDir, e.Name(), ".git")
-		if _, err := os.Stat(gitDir); err != nil {
-			continue
-		}
-		cmd := exec.Command("git", "log", "--reverse", "--format=%aI")
-		cmd.Dir = filepath.Join(sitesDir, e.Name())
-		if out, err := cmd.Output(); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			if len(lines) > 0 {
-				if firstDate, err := time.Parse(time.RFC3339, strings.TrimSpace(lines[0])); err == nil {
-					if firstDate.After(since) {
-						newSites = append(newSites, e.Name())
-					}
-				}
-			}
-		}
-	}
-	return newSites
-}
-
 // renderMarkdown produces the structured markdown report.
 func renderMarkdown(report *Report) string {
 	var b strings.Builder
@@ -323,14 +284,6 @@ func renderMarkdown(report *Report) string {
 		fmt.Fprintf(&b, "### New repos\n\n")
 		for _, r := range newRepos {
 			fmt.Fprintf(&b, "- %s (%d commits)\n", r.Name, r.CommitCount)
-		}
-		fmt.Fprintln(&b)
-	}
-
-	if len(report.NewSites) > 0 {
-		fmt.Fprintf(&b, "### New sites published\n\n")
-		for _, s := range report.NewSites {
-			fmt.Fprintf(&b, "- %s\n", s)
 		}
 		fmt.Fprintln(&b)
 	}
