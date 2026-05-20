@@ -67,7 +67,8 @@ func TestViewInterview(t *testing.T) {
 
 func TestWithWeeklyMode(t *testing.T) {
 	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
-	m.WithWeeklyMode("weekly system prompt")
+	weeklyDir := t.TempDir()
+	m.WithWeeklyMode("weekly system prompt", weeklyDir)
 
 	if m.sessionKind != "weekly" {
 		t.Errorf("expected weekly kind, got %q", m.sessionKind)
@@ -77,6 +78,9 @@ func TestWithWeeklyMode(t *testing.T) {
 	}
 	if m.Messages[0].Content != "weekly system prompt" {
 		t.Error("expected system prompt to be replaced")
+	}
+	if m.weeklyOutputDir != weeklyDir {
+		t.Errorf("expected weeklyOutputDir %q, got %q", weeklyDir, m.weeklyOutputDir)
 	}
 }
 

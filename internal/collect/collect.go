@@ -35,8 +35,13 @@ type RepoActivity struct {
 
 // Config holds configuration for the collection pass.
 type Config struct {
-	SiteDir       string // path to generativeplane.com site directory (since-derivation, transitional)
 	WorkspacePath string // workspace root containing sibling git repos
+}
+
+// WeeklyDir returns the directory under a workspace path where weekly
+// posts are stored.
+func WeeklyDir(workspacePath string) string {
+	return filepath.Join(workspacePath, ".imago", "weekly")
 }
 
 // ValidateWorkspace returns an error if path is not a directory containing
@@ -61,7 +66,7 @@ func ValidateWorkspace(path string) error {
 
 // Run performs the full collection pass: workspace scan and markdown generation.
 func Run(cfg Config) (*Report, error) {
-	since := deriveSinceDate(cfg.SiteDir)
+	since := deriveSinceDate(WeeklyDir(cfg.WorkspacePath))
 
 	localRepos, err := scanLocal(cfg.WorkspacePath, since)
 	if err != nil {

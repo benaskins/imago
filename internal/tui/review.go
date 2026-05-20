@@ -59,7 +59,13 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.session != nil {
 					m.session.MarkComplete(m.sessionDir)
 				}
-				path, err := writeDraft(m.finalMarkdown)
+				var path string
+				var err error
+				if m.sessionKind == "weekly" && m.weeklyOutputDir != "" {
+					path, err = writeWeeklyDraft(m.finalMarkdown, m.weeklyOutputDir)
+				} else {
+					path, err = writeDraft(m.finalMarkdown)
+				}
 				if err != nil {
 					slog.Error("failed to write draft", "error", err)
 					m.draftError = fmt.Sprintf("Failed to save: %v", err)

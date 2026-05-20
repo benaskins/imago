@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]+`)
@@ -68,6 +69,19 @@ func writeDraft(markdown string) (string, error) {
 		}
 	}
 
+	if err := os.WriteFile(path, []byte(markdown), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// writeWeeklyDraft writes the weekly markdown to dir/weekly-YYYY-MM-DD.md,
+// creating the directory if it doesn't exist. Returns the full path.
+func writeWeeklyDraft(markdown, dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "weekly-"+time.Now().Format("2006-01-02")+".md")
 	if err := os.WriteFile(path, []byte(markdown), 0o600); err != nil {
 		return "", err
 	}

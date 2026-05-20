@@ -54,7 +54,6 @@ func All(cfg Config) map[string]tool.ToolDef {
 		ListPosts(cfg.SiteDir),
 		FetchPage(fetchOpts...),
 		Search(cfg.SearXNGURL),
-		SubmitDraft(cfg.SyndURL, cfg.SyndToken),
 		Recall(cfg.MemoURL),
 		ListDir(),
 	}

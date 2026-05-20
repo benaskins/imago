@@ -22,6 +22,26 @@ func TestDeriveSinceDate_FromWeeklyFile(t *testing.T) {
 	}
 }
 
+func TestRun_DerivesSinceFromWorkspaceWeeklyDir(t *testing.T) {
+	workspace := t.TempDir()
+	weeklyDir := filepath.Join(workspace, ".imago", "weekly")
+	if err := os.MkdirAll(weeklyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(weeklyDir, "weekly-2026-03-15.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Run(Config{WorkspacePath: workspace})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want, _ := time.Parse("2006-01-02", "2026-03-15")
+	if !report.Since.Equal(want) {
+		t.Errorf("Since = %v, want %v (from <workspace>/.imago/weekly)", report.Since, want)
+	}
+}
+
 func TestDeriveSinceDate_NoWeeklyFiles(t *testing.T) {
 	dir := t.TempDir()
 

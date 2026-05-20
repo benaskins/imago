@@ -125,7 +125,6 @@ func main() {
 		// Run collection pass.
 		fmt.Println("Collecting activity data...")
 		report, err := collect.Run(collect.Config{
-			SiteDir:       cfg.SiteDir,
 			WorkspacePath: workspacePath,
 		})
 		if err != nil {
@@ -135,10 +134,11 @@ func main() {
 		fmt.Printf("Found %d active repos since %s\n", len(report.Repos), report.Since.Format("Jan 2"))
 
 		// Build weekly system prompt with collection data and previous post.
-		previousWeekly := collect.PreviousWeekly(cfg.SiteDir)
+		weeklyDir := collect.WeeklyDir(workspacePath)
+		previousWeekly := collect.PreviousWeekly(weeklyDir)
 		workspaceName := filepath.Base(workspacePath)
 		systemPrompt := config.WeeklySystemPrompt(workspaceName, workspacePath, report.Markdown, previousWeekly)
-		model.WithWeeklyMode(systemPrompt)
+		model.WithWeeklyMode(systemPrompt, weeklyDir)
 
 		slog.Info("weekly mode", "model", mcfg.InterviewModel)
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSlugify(t *testing.T) {
@@ -38,6 +39,41 @@ func TestExtractTitle(t *testing.T) {
 	got = extractTitle("No headings here")
 	if got != "" {
 		t.Errorf("extractTitle with no heading = %q, want empty", got)
+	}
+}
+
+func TestWriteWeeklyDraft(t *testing.T) {
+	weeklyDir := t.TempDir()
+	md := "# Week notes\n\nbody"
+	path, err := writeWeeklyDraft(md, weeklyDir)
+	if err != nil {
+		t.Fatalf("writeWeeklyDraft: %v", err)
+	}
+	if filepath.Dir(path) != weeklyDir {
+		t.Errorf("expected file in %q, got %q", weeklyDir, path)
+	}
+	base := filepath.Base(path)
+	want := "weekly-" + time.Now().Format("2006-01-02") + ".md"
+	if base != want {
+		t.Errorf("expected filename %q, got %q", want, base)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != md {
+		t.Errorf("file content mismatch")
+	}
+}
+
+func TestWriteWeeklyDraft_CreatesDir(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, ".imago", "weekly")
+	if _, err := writeWeeklyDraft("# hi", nested); err != nil {
+		t.Fatalf("writeWeeklyDraft: %v", err)
+	}
+	if _, err := os.Stat(nested); err != nil {
+		t.Errorf("expected dir to be created: %v", err)
 	}
 }
 
