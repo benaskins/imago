@@ -36,12 +36,13 @@ type RepoActivity struct {
 // Config holds configuration for the collection pass.
 type Config struct {
 	WorkspacePath string // workspace root containing sibling git repos
+	Period        string // "weekly" or "daily"
 }
 
-// WeeklyDir returns the directory under a workspace path where weekly
-// posts are stored.
-func WeeklyDir(workspacePath string) string {
-	return filepath.Join(workspacePath, ".imago", "weekly")
+// PeriodDir returns the directory under a workspace path where posts of
+// the given period are stored (e.g. <workspace>/.imago/weekly).
+func PeriodDir(workspacePath, period string) string {
+	return filepath.Join(workspacePath, ".imago", period)
 }
 
 // ValidateWorkspace returns an error if path is not a directory containing
@@ -66,7 +67,7 @@ func ValidateWorkspace(path string) error {
 
 // Run performs the full collection pass: workspace scan and markdown generation.
 func Run(cfg Config) (*Report, error) {
-	since := deriveSinceDate(WeeklyDir(cfg.WorkspacePath))
+	since := deriveSinceDate(PeriodDir(cfg.WorkspacePath, cfg.Period), cfg.Period)
 
 	localRepos, err := scanLocal(cfg.WorkspacePath, since)
 	if err != nil {
@@ -95,20 +96,21 @@ func Run(cfg Config) (*Report, error) {
 	return report, nil
 }
 
-// deriveSinceDate finds the most recent weekly-*.md file in the site
-// directory and parses the date from the filename. Falls back to 7
-// days ago if no weekly exists.
-func deriveSinceDate(siteDir string) time.Time {
-	if siteDir == "" {
-		return time.Now().AddDate(0, 0, -7)
+// deriveSinceDate finds the most recent <period>-YYYY-MM-DD.md file in
+// dir and returns its date. Falls back to a period-appropriate window
+// (1 day for daily, 7 days for anything else) when no prior file exists.
+func deriveSinceDate(dir, period string) time.Time {
+	fallback := periodFallback(period)
+	if dir == "" {
+		return fallback
 	}
 
-	entries, err := os.ReadDir(siteDir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return time.Now().AddDate(0, 0, -7)
+		return fallback
 	}
 
-	re := regexp.MustCompile(`^weekly-(\d{4}-\d{2}-\d{2})\.md$`)
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(period) + `-(\d{4}-\d{2}-\d{2})\.md$`)
 	var latest time.Time
 
 	for _, e := range entries {
@@ -122,9 +124,16 @@ func deriveSinceDate(siteDir string) time.Time {
 	}
 
 	if latest.IsZero() {
-		return time.Now().AddDate(0, 0, -7)
+		return fallback
 	}
 	return latest
+}
+
+func periodFallback(period string) time.Time {
+	if period == "daily" {
+		return time.Now().AddDate(0, 0, -1)
+	}
+	return time.Now().AddDate(0, 0, -7)
 }
 
 // scanLocal discovers git repos under devDir and gathers activity.
@@ -316,19 +325,19 @@ func renderMarkdown(report *Report) string {
 	return b.String()
 }
 
-// PreviousWeekly reads the most recent weekly-*.md file from the site
-// directory and returns its content.
-func PreviousWeekly(siteDir string) string {
-	if siteDir == "" {
+// PreviousPost reads the most recent <period>-*.md file from dir and
+// returns its content, or empty string if none.
+func PreviousPost(dir, period string) string {
+	if dir == "" {
 		return ""
 	}
 
-	entries, err := os.ReadDir(siteDir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
 	}
 
-	re := regexp.MustCompile(`^weekly-(\d{4}-\d{2}-\d{2})\.md$`)
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(period) + `-(\d{4}-\d{2}-\d{2})\.md$`)
 	var latest string
 	var latestDate time.Time
 
@@ -347,7 +356,7 @@ func PreviousWeekly(siteDir string) string {
 		return ""
 	}
 
-	data, err := os.ReadFile(filepath.Join(siteDir, latest))
+	data, err := os.ReadFile(filepath.Join(dir, latest))
 	if err != nil {
 		return ""
 	}

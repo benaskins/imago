@@ -8,21 +8,35 @@ import (
 	"time"
 )
 
-func TestDeriveSinceDate_FromWeeklyFile(t *testing.T) {
+func TestDeriveSinceDate_WeeklyFromFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "weekly-2026-03-08.md"), []byte("# Week 1"), 0644)
 	os.WriteFile(filepath.Join(dir, "weekly-2026-03-15.md"), []byte("# Week 2"), 0644)
 	os.WriteFile(filepath.Join(dir, "other-file.md"), []byte("# Not weekly"), 0644)
 
-	got := deriveSinceDate(dir)
+	got := deriveSinceDate(dir, "weekly")
 
 	want, _ := time.Parse("2006-01-02", "2026-03-15")
 	if !got.Equal(want) {
-		t.Errorf("deriveSinceDate = %v, want %v", got, want)
+		t.Errorf("deriveSinceDate(weekly) = %v, want %v", got, want)
 	}
 }
 
-func TestRun_DerivesSinceFromWorkspaceWeeklyDir(t *testing.T) {
+func TestDeriveSinceDate_DailyFromFile(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "daily-2026-05-18.md"), []byte("# d"), 0644)
+	os.WriteFile(filepath.Join(dir, "daily-2026-05-20.md"), []byte("# d"), 0644)
+	os.WriteFile(filepath.Join(dir, "weekly-2026-05-19.md"), []byte("# w"), 0644)
+
+	got := deriveSinceDate(dir, "daily")
+
+	want, _ := time.Parse("2006-01-02", "2026-05-20")
+	if !got.Equal(want) {
+		t.Errorf("deriveSinceDate(daily) = %v, want %v", got, want)
+	}
+}
+
+func TestRun_WeeklyDerivesSinceFromWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	weeklyDir := filepath.Join(workspace, ".imago", "weekly")
 	if err := os.MkdirAll(weeklyDir, 0755); err != nil {
@@ -32,36 +46,70 @@ func TestRun_DerivesSinceFromWorkspaceWeeklyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report, err := Run(Config{WorkspacePath: workspace})
+	report, err := Run(Config{WorkspacePath: workspace, Period: "weekly"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	want, _ := time.Parse("2006-01-02", "2026-03-15")
 	if !report.Since.Equal(want) {
-		t.Errorf("Since = %v, want %v (from <workspace>/.imago/weekly)", report.Since, want)
+		t.Errorf("Since = %v, want %v", report.Since, want)
 	}
 }
 
-func TestDeriveSinceDate_NoWeeklyFiles(t *testing.T) {
-	dir := t.TempDir()
+func TestRun_DailyDerivesSinceFromWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	dailyDir := filepath.Join(workspace, ".imago", "daily")
+	if err := os.MkdirAll(dailyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dailyDir, "daily-2026-05-20.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	got := deriveSinceDate(dir)
+	report, err := Run(Config{WorkspacePath: workspace, Period: "daily"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want, _ := time.Parse("2006-01-02", "2026-05-20")
+	if !report.Since.Equal(want) {
+		t.Errorf("Since = %v, want %v", report.Since, want)
+	}
+}
 
-	// Should fall back to ~7 days ago.
+func TestDeriveSinceDate_WeeklyNoFilesFallsBack7Days(t *testing.T) {
+	got := deriveSinceDate(t.TempDir(), "weekly")
 	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
 	diff := got.Sub(sevenDaysAgo)
 	if diff < -time.Second || diff > time.Second {
-		t.Errorf("deriveSinceDate = %v, want ~%v", got, sevenDaysAgo)
+		t.Errorf("deriveSinceDate(weekly) = %v, want ~%v", got, sevenDaysAgo)
+	}
+}
+
+func TestDeriveSinceDate_DailyNoFilesFallsBack1Day(t *testing.T) {
+	got := deriveSinceDate(t.TempDir(), "daily")
+	oneDayAgo := time.Now().AddDate(0, 0, -1)
+	diff := got.Sub(oneDayAgo)
+	if diff < -time.Second || diff > time.Second {
+		t.Errorf("deriveSinceDate(daily) = %v, want ~%v", got, oneDayAgo)
 	}
 }
 
 func TestDeriveSinceDate_EmptyDir(t *testing.T) {
-	got := deriveSinceDate("")
+	got := deriveSinceDate("", "weekly")
 
 	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
 	diff := got.Sub(sevenDaysAgo)
 	if diff < -time.Second || diff > time.Second {
 		t.Errorf("deriveSinceDate = %v, want ~%v", got, sevenDaysAgo)
+	}
+}
+
+func TestPeriodDir(t *testing.T) {
+	if got := PeriodDir("/tmp/ws", "weekly"); got != filepath.Join("/tmp/ws", ".imago", "weekly") {
+		t.Errorf("PeriodDir weekly = %q", got)
+	}
+	if got := PeriodDir("/tmp/ws", "daily"); got != filepath.Join("/tmp/ws", ".imago", "daily") {
+		t.Errorf("PeriodDir daily = %q", got)
 	}
 }
 
@@ -207,29 +255,38 @@ func TestRenderMarkdown_NoNewReposOrSites(t *testing.T) {
 	}
 }
 
-func TestPreviousWeekly(t *testing.T) {
+func TestPreviousPost_Weekly(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "weekly-2026-03-08.md"), []byte("# Week 1\nOld content"), 0644)
 	os.WriteFile(filepath.Join(dir, "weekly-2026-03-15.md"), []byte("# Week 2\nLatest content"), 0644)
 
-	got := PreviousWeekly(dir)
-
+	got := PreviousPost(dir, "weekly")
 	if got != "# Week 2\nLatest content" {
-		t.Errorf("PreviousWeekly = %q", got)
+		t.Errorf("PreviousPost(weekly) = %q", got)
 	}
 }
 
-func TestPreviousWeekly_NoFiles(t *testing.T) {
-	got := PreviousWeekly(t.TempDir())
-	if got != "" {
-		t.Errorf("PreviousWeekly = %q, want empty", got)
+func TestPreviousPost_Daily(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "daily-2026-05-19.md"), []byte("old"), 0644)
+	os.WriteFile(filepath.Join(dir, "daily-2026-05-20.md"), []byte("latest"), 0644)
+	os.WriteFile(filepath.Join(dir, "weekly-2026-05-19.md"), []byte("weekly"), 0644)
+
+	got := PreviousPost(dir, "daily")
+	if got != "latest" {
+		t.Errorf("PreviousPost(daily) = %q, want %q", got, "latest")
 	}
 }
 
-func TestPreviousWeekly_EmptyDir(t *testing.T) {
-	got := PreviousWeekly("")
-	if got != "" {
-		t.Errorf("PreviousWeekly = %q, want empty", got)
+func TestPreviousPost_NoFiles(t *testing.T) {
+	if got := PreviousPost(t.TempDir(), "weekly"); got != "" {
+		t.Errorf("PreviousPost = %q, want empty", got)
+	}
+}
+
+func TestPreviousPost_EmptyDir(t *testing.T) {
+	if got := PreviousPost("", "weekly"); got != "" {
+		t.Errorf("PreviousPost = %q, want empty", got)
 	}
 }
 
