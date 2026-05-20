@@ -113,6 +113,43 @@ func TestRun_WorkspacePath_EmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestValidateWorkspace_OK(t *testing.T) {
+	ws := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(ws, "repo", ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateWorkspace(ws); err != nil {
+		t.Errorf("ValidateWorkspace: unexpected error: %v", err)
+	}
+}
+
+func TestValidateWorkspace_DoesNotExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	if err := ValidateWorkspace(missing); err == nil {
+		t.Error("ValidateWorkspace: expected error for missing path")
+	}
+}
+
+func TestValidateWorkspace_NotDirectory(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(f, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateWorkspace(f); err == nil {
+		t.Error("ValidateWorkspace: expected error for non-directory")
+	}
+}
+
+func TestValidateWorkspace_NoGitRepos(t *testing.T) {
+	ws := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(ws, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateWorkspace(ws); err == nil {
+		t.Error("ValidateWorkspace: expected error when workspace contains no git repos")
+	}
+}
+
 func TestRun_WorkspacePath_DiscoversRepos(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "repo-a", ".git"), 0755); err != nil {

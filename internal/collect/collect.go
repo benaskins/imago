@@ -39,6 +39,26 @@ type Config struct {
 	WorkspacePath string // workspace root containing sibling git repos
 }
 
+// ValidateWorkspace returns an error if path is not a directory containing
+// at least one git repo (direct or nested, up to the discoverRepos depth bound).
+func ValidateWorkspace(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("workspace path %q: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("workspace path %q is not a directory", path)
+	}
+	repos, err := discoverRepos(path)
+	if err != nil {
+		return fmt.Errorf("workspace path %q: discover: %w", path, err)
+	}
+	if len(repos) == 0 {
+		return fmt.Errorf("workspace path %q contains no git repositories", path)
+	}
+	return nil
+}
+
 // Run performs the full collection pass: workspace scan and markdown generation.
 func Run(cfg Config) (*Report, error) {
 	since := deriveSinceDate(cfg.SiteDir)

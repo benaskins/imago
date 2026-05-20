@@ -33,6 +33,20 @@ func main() {
 	// Determine mode from subcommand.
 	weekly := len(os.Args) > 1 && os.Args[1] == "weekly"
 
+	// Weekly mode requires a workspace path argument.
+	var workspacePath string
+	if weekly {
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "usage: imago weekly <workspace-path>")
+			os.Exit(2)
+		}
+		workspacePath = os.Args[2]
+		if err := collect.ValidateWorkspace(workspacePath); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(2)
+		}
+	}
+
 	// Select LLM client.
 	var client loop.LLMClient
 	if weekly {
@@ -111,7 +125,7 @@ func main() {
 		fmt.Println("Collecting activity data...")
 		report, err := collect.Run(collect.Config{
 			SiteDir:       cfg.SiteDir,
-			WorkspacePath: envOrDefault("DEV", os.ExpandEnv("$HOME/dev")),
+			WorkspacePath: workspacePath,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "collection failed: %v\n", err)
