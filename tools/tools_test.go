@@ -369,10 +369,16 @@ func TestAll(t *testing.T) {
 		"repo_overview", "read_files",
 		"read_file", "git_log", "read_post", "list_posts",
 		"fetch_page", "search",
-		"aurelia_status", "aurelia_show", "lamina",
 		"submit_draft",
 		"recall",
 		"list_dir",
+	}
+
+	notExpected := []string{"aurelia_status", "aurelia_show", "lamina"}
+	for _, name := range notExpected {
+		if _, ok := m[name]; ok {
+			t.Errorf("workspace-specific tool %q should not be wired", name)
+		}
 	}
 
 	for _, name := range expected {

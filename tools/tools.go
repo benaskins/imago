@@ -54,9 +54,6 @@ func All(cfg Config) map[string]tool.ToolDef {
 		ListPosts(cfg.SiteDir),
 		FetchPage(fetchOpts...),
 		Search(cfg.SearXNGURL),
-		AureliaStatus(),
-		AureliaShow(),
-		Lamina(),
 		SubmitDraft(cfg.SyndURL, cfg.SyndToken),
 		Recall(cfg.MemoURL),
 		ListDir(),
@@ -633,91 +630,6 @@ func Search(searxngURL string) tool.ToolDef {
 				sb.WriteString(fmt.Sprintf("%d. %s\n   URL: %s\n   %s\n\n", i+1, r.Title, r.URL, r.Snippet))
 			}
 			return tool.ToolResult{Content: sb.String()}
-		},
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Infrastructure tools
-// ---------------------------------------------------------------------------
-
-// AureliaStatus returns a tool that runs `aurelia status`.
-func AureliaStatus() tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "aurelia_status",
-		Description: "Check the status of all services managed by aurelia. Shows running/stopped state, health, and uptime.",
-		Parameters: tool.ParameterSchema{
-			Type:       "object",
-			Properties: map[string]tool.PropertySchema{},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			cmd := exec.CommandContext(ctx.Ctx, "aurelia", "status")
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error running aurelia status: %v\n%s", err, string(out))}
-			}
-			return tool.ToolResult{Content: string(out)}
-		},
-	}
-}
-
-// AureliaShow returns a tool that runs `aurelia show <service>`.
-func AureliaShow() tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "aurelia_show",
-		Description: "Get detailed information about a specific service managed by aurelia, including config, health check details, and dependencies.",
-		Parameters: tool.ParameterSchema{
-			Type:     "object",
-			Required: []string{"service"},
-			Properties: map[string]tool.PropertySchema{
-				"service": {
-					Type:        "string",
-					Description: "The name of the service to inspect.",
-				},
-			},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			service, _ := args["service"].(string)
-			if service == "" {
-				return tool.ToolResult{Content: "Error: service is required."}
-			}
-			cmd := exec.CommandContext(ctx.Ctx, "aurelia", "show", service) // #nosec G204 -- tool executor runs aurelia with user-provided service name
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error running aurelia show: %v\n%s", err, string(out))}
-			}
-			return tool.ToolResult{Content: string(out)}
-		},
-	}
-}
-
-// Lamina returns a tool that runs a lamina CLI command.
-func Lamina() tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "lamina",
-		Description: "Run a lamina workspace management command. Supports commands like 'repo status', 'deps', 'doctor', 'test', etc.",
-		Parameters: tool.ParameterSchema{
-			Type:     "object",
-			Required: []string{"args"},
-			Properties: map[string]tool.PropertySchema{
-				"args": {
-					Type:        "string",
-					Description: "The lamina command arguments, e.g. 'repo status', 'deps', 'doctor'.",
-				},
-			},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			cmdArgs, _ := args["args"].(string)
-			if cmdArgs == "" {
-				return tool.ToolResult{Content: "Error: args is required."}
-			}
-			parts := strings.Fields(cmdArgs)
-			cmd := exec.CommandContext(ctx.Ctx, "lamina", parts...) // #nosec G204 -- tool executor runs lamina with user-provided args
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error running lamina: %v\n%s", err, string(out))}
-			}
-			return tool.ToolResult{Content: string(out)}
 		},
 	}
 }
