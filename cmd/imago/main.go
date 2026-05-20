@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -65,16 +64,7 @@ func main() {
 	// Build HTTP client — routes through wire proxy if AXON_WIRE_URL is set.
 	httpClient := wire.NewClient()
 
-	// Load tool config from environment
-	syndToken := ""
-	if data, err := os.ReadFile(os.ExpandEnv("$HOME/.config/synd/token")); err == nil {
-		syndToken = strings.TrimSpace(string(data))
-	}
-
 	cfg := tools.Config{
-		SiteDir:     envOrDefault("SYND_SITE_DIR", ""),
-		SyndURL:     envOrDefault("SYND_SERVICE_URL", ""),
-		SyndToken:   syndToken,
 		MemoURL:     envOrDefault("MEMO_SERVICE_URL", ""),
 		SearXNGURL:  envOrDefault("SEARXNG_URL", ""),
 		DispatchURL: envOrDefault("AXON_DISPATCH_URL", ""),

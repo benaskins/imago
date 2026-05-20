@@ -19,7 +19,7 @@ just install   # copies to ~/.local/bin/imago
 ## Modes
 
 - `imago`: interview mode. Uses Ollama or Cloudflare Workers AI. Research journalist interviews you, generates a draft, you review section by section.
-- `imago weekly`: weekly update mode. Collects git activity from local + hestia, interviews you with the data, produces a weekly post for generativeplane.com. Uses Anthropic (Opus) via Cloudflare AI Gateway.
+- `imago weekly <workspace-path>`: weekly update mode. Walks the workspace root for sibling git repos, collects activity, interviews you with the data, writes a weekly post to `<workspace-path>/.imago/weekly/weekly-YYYY-MM-DD.md`. Uses Anthropic (Opus) via Cloudflare AI Gateway.
 
 ## Structure
 
@@ -30,7 +30,7 @@ internal/config/        model config, system prompts, draft prompts
 internal/session/       JSON session persistence (~/.local/share/imago/sessions/)
 internal/collect/       git activity collection for weekly mode
 internal/logging/       structured logging
-tools/tools.go          15 axon-tool definitions (repo_overview, search, fetch_page, etc.)
+tools/tools.go          axon-tool definitions (repo_overview, git_log, search, fetch_page, recall, etc.)
 ```
 
 ## Key dependencies
@@ -52,14 +52,12 @@ All axon modules use local `replace` directives to `/Users/benaskins/dev/lamina/
 | `CLOUDFLARE_AXON_GATE_TOKEN` | Workers AI auth via axon-gate |
 | `CLOUDFLARE_AI_GATEWAY_TOKEN` | AI Gateway auth (weekly mode) |
 | `ANTHROPIC_API_KEY` | Direct Anthropic API fallback |
-| `SYND_SITE_DIR` | Site directory for post listing and weekly date derivation |
-| `SYND_SERVICE_URL` | Synd server URL for draft submission |
 | `MEMO_SERVICE_URL` | axon-memo URL for recall |
 | `SEARXNG_URL` | SearXNG instance for web search |
 | `AXON_DISPATCH_URL` | Research dispatch worker (enables parallel URL fetching) |
 | `AXON_WIRE_URL` | Wire proxy URL |
 | `AXON_WIRE_TOKEN` | Wire proxy / dispatch auth token |
-| `DEV` | Workspace root (defaults to ~/dev) |
+| `DEV` | Workspace root for base interview mode (defaults to ~/dev). Weekly mode takes the workspace as a positional arg. |
 | `IMAGO_DRAFT_MODEL` | Override draft model in weekly mode (default: claude-opus-4-6) |
 
 ## Flow
@@ -68,7 +66,7 @@ All axon modules use local `replace` directives to `/Users/benaskins/dev/lamina/
 2. `/draft`: LLM generates full markdown draft from transcript
 3. Section review: draft split by headings, approve (`/keep`) or give feedback per section
 4. Final review: full article view, give feedback or `/done`
-5. Draft saved to `~/Documents/imago/<slug>.md`
+5. Draft saved to `~/Documents/imago/<slug>.md` (interview mode) or `<workspace>/.imago/weekly/weekly-YYYY-MM-DD.md` (weekly mode)
 
 ## Session persistence
 

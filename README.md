@@ -8,7 +8,12 @@ A terminal app that interviews you and writes a blog post. Two phases: interview
 2. **Draft** — when you say `/draft`, imago writes a complete post from the interview material.
 3. **Edit** — the draft is split into sections by headings. You review each one, give feedback, correct facts. The agent revises with the full interview as ground truth.
 4. **Final review** — all sections assembled, one last pass over the whole piece.
-5. **Save** — `/done` writes the markdown to `~/Documents/imago/`.
+5. **Save** — `/done` writes the markdown to `~/Documents/imago/` (interview mode) or `<workspace>/.imago/weekly/` (weekly mode).
+
+## Modes
+
+- `imago`: interview mode for a single post.
+- `imago weekly <workspace-path>`: weekly update mode. Walks `<workspace-path>` for sibling git repos, collects the past week of activity, interviews you with the data, and writes the post to `<workspace-path>/.imago/weekly/weekly-YYYY-MM-DD.md`.
 
 See [a real session](docs/example-session.md) that produced the first imago blog post in 26 minutes.
 
@@ -37,9 +42,7 @@ All optional, via environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `DEV` | Workspace root directory for tool context |
-| `SYND_SITE_DIR` | Path to site directory for post reading |
-| `SYND_SERVICE_URL` | Synd server URL for draft submission |
+| `DEV` | Workspace root directory for base interview mode tool context |
 | `MEMO_SERVICE_URL` | axon-memo URL for editorial memory |
 | `SEARXNG_URL` | SearXNG instance URL for web search |
 

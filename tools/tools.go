@@ -14,11 +14,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
-
-	"golang.org/x/net/html"
 
 	tool "github.com/benaskins/axon-tool"
 )
@@ -26,9 +23,6 @@ import (
 // Config holds external configuration for tools that depend on
 // environment-specific URLs, paths, or credentials.
 type Config struct {
-	SiteDir     string       // path to generativeplane.com site directory
-	SyndURL     string       // synd server base URL
-	SyndToken   string       // auth token for synd API
 	MemoURL     string       // axon-memo service URL
 	SearXNGURL  string       // SearXNG instance URL
 	DispatchURL string       // research dispatch worker URL
@@ -50,8 +44,6 @@ func All(cfg Config) map[string]tool.ToolDef {
 		ReadFiles(),
 		ReadFile(),
 		GitLog(),
-		ReadPost(cfg.SiteDir),
-		ListPosts(cfg.SiteDir),
 		FetchPage(fetchOpts...),
 		Search(cfg.SearXNGURL),
 		Recall(cfg.MemoURL),
@@ -447,116 +439,6 @@ func GitLog() tool.ToolDef {
 	}
 }
 
-// ReadPost returns a tool that reads a published post by ID from the site directory.
-// It reads the HTML file, strips tags, and returns the text content.
-func ReadPost(siteDir string) tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "read_post",
-		Description: "Read a published post from generativeplane.com. Reads the HTML, strips tags, and returns the text content. Use 'latest' to read the most recently published post.",
-		Parameters: tool.ParameterSchema{
-			Type:     "object",
-			Required: []string{"post_id"},
-			Properties: map[string]tool.PropertySchema{
-				"post_id": {
-					Type:        "string",
-					Description: "The post UUID, or 'latest' for the most recent post.",
-				},
-			},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			postID, _ := args["post_id"].(string)
-			if postID == "" {
-				return tool.ToolResult{Content: "Error: post_id is required."}
-			}
-
-			dir := siteDir
-			if dir == "" {
-				return tool.ToolResult{Content: "Error: site directory not configured."}
-			}
-
-			postsDir := filepath.Join(dir, "posts")
-
-			if postID == "latest" {
-				resolved, err := latestPostID(postsDir)
-				if err != nil {
-					return tool.ToolResult{Content: fmt.Sprintf("Error finding latest post: %v", err)}
-				}
-				postID = resolved
-			}
-
-			htmlPath := filepath.Join(postsDir, postID, "index.html")
-			data, err := os.ReadFile(htmlPath) // #nosec G304 -- reads post file from configured site dir
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error reading post: %v", err)}
-			}
-
-			text, err := stripHTML(string(data))
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error stripping HTML: %v", err)}
-			}
-
-			return tool.ToolResult{Content: fmt.Sprintf("Post %s:\n\n%s", postID, text)}
-		},
-	}
-}
-
-// ListPosts returns a tool that lists published posts in the site directory.
-func ListPosts(siteDir string) tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "list_posts",
-		Description: "List published posts on generativeplane.com. Returns post IDs and titles.",
-		Parameters: tool.ParameterSchema{
-			Type:       "object",
-			Properties: map[string]tool.PropertySchema{},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			dir := siteDir
-			if dir == "" {
-				return tool.ToolResult{Content: "Error: site directory not configured."}
-			}
-
-			postsDir := filepath.Join(dir, "posts")
-			entries, err := os.ReadDir(postsDir)
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error reading posts directory: %v", err)}
-			}
-
-			type postInfo struct {
-				id      string
-				title   string
-				modTime time.Time
-			}
-			var posts []postInfo
-
-			for _, e := range entries {
-				if !e.IsDir() {
-					continue
-				}
-				id := e.Name()
-				htmlPath := filepath.Join(postsDir, id, "index.html")
-				title := extractTitle(htmlPath)
-				info, err := e.Info()
-				var modTime time.Time
-				if err == nil {
-					modTime = info.ModTime()
-				}
-				posts = append(posts, postInfo{id: id, title: title, modTime: modTime})
-			}
-
-			sort.Slice(posts, func(i, j int) bool {
-				return posts[i].modTime.After(posts[j].modTime)
-			})
-
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("Published posts (%d):\n\n", len(posts)))
-			for _, p := range posts {
-				sb.WriteString(fmt.Sprintf("- %s  %s\n", p.id, p.title))
-			}
-			return tool.ToolResult{Content: sb.String()}
-		},
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Web tools
 // ---------------------------------------------------------------------------
@@ -629,110 +511,6 @@ func Search(searxngURL string) tool.ToolDef {
 				sb.WriteString(fmt.Sprintf("%d. %s\n   URL: %s\n   %s\n\n", i+1, r.Title, r.URL, r.Snippet))
 			}
 			return tool.ToolResult{Content: sb.String()}
-		},
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Publishing tools
-// ---------------------------------------------------------------------------
-
-// SubmitDraft returns a tool that POSTs a draft to the synd server API.
-func SubmitDraft(syndURL, syndToken string) tool.ToolDef {
-	return tool.ToolDef{
-		Name:        "submit_draft",
-		Description: "Submit a finished draft to the synd publishing pipeline. Creates a draft post that will go through the approval flow (Signal notification, review, publish, deploy).",
-		Parameters: tool.ParameterSchema{
-			Type:     "object",
-			Required: []string{"title", "body"},
-			Properties: map[string]tool.PropertySchema{
-				"title": {
-					Type:        "string",
-					Description: "The post title.",
-				},
-				"body": {
-					Type:        "string",
-					Description: "The post body in Markdown.",
-				},
-				"abstract": {
-					Type:        "string",
-					Description: "A short abstract or summary of the post.",
-				},
-				"tags": {
-					Type:        "string",
-					Description: "Comma-separated list of tags.",
-				},
-			},
-		},
-		Execute: func(ctx *tool.ToolContext, args map[string]any) tool.ToolResult {
-			if syndURL == "" {
-				return tool.ToolResult{Content: "Error: synd service URL not configured."}
-			}
-			if syndToken == "" {
-				return tool.ToolResult{Content: "Error: synd auth token not configured."}
-			}
-
-			title, _ := args["title"].(string)
-			body, _ := args["body"].(string)
-			abstract, _ := args["abstract"].(string)
-			tagsStr, _ := args["tags"].(string)
-
-			if title == "" {
-				return tool.ToolResult{Content: "Error: title is required."}
-			}
-			if body == "" {
-				return tool.ToolResult{Content: "Error: body is required."}
-			}
-
-			var tags []string
-			if tagsStr != "" {
-				for _, t := range strings.Split(tagsStr, ",") {
-					t = strings.TrimSpace(t)
-					if t != "" {
-						tags = append(tags, t)
-					}
-				}
-			}
-
-			payload := map[string]any{
-				"kind":  "long",
-				"title": title,
-				"body":  body,
-			}
-			if abstract != "" {
-				payload["abstract"] = abstract
-			}
-			if len(tags) > 0 {
-				payload["tags"] = tags
-			}
-
-			jsonData, err := json.Marshal(payload)
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error encoding payload: %v", err)}
-			}
-
-			url := strings.TrimRight(syndURL, "/") + "/api/posts"
-			req, err := http.NewRequestWithContext(ctx.Ctx, http.MethodPost, url, bytes.NewReader(jsonData))
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error creating request: %v", err)}
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+syndToken)
-
-			client := &http.Client{Timeout: 30 * time.Second}
-			resp, err := client.Do(req)
-			if err != nil {
-				return tool.ToolResult{Content: fmt.Sprintf("Error submitting draft: %v", err)}
-			}
-			defer resp.Body.Close()
-
-			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				return tool.ToolResult{Content: fmt.Sprintf("Synd API returned %d: %s", resp.StatusCode, string(respBody))}
-			}
-
-			return tool.ToolResult{Content: fmt.Sprintf("Draft submitted successfully.\n%s", string(respBody))}
 		},
 	}
 }
@@ -932,91 +710,3 @@ func decodeBase64Content(s string) (string, error) {
 	return string(data), nil
 }
 
-// stripHTML tokenizes HTML and extracts text content.
-func stripHTML(s string) (string, error) {
-	tokenizer := html.NewTokenizer(strings.NewReader(s))
-	var sb strings.Builder
-	for {
-		tt := tokenizer.Next()
-		switch tt {
-		case html.ErrorToken:
-			err := tokenizer.Err()
-			if err == io.EOF {
-				return strings.TrimSpace(sb.String()), nil
-			}
-			return "", err
-		case html.TextToken:
-			text := strings.TrimSpace(tokenizer.Token().Data)
-			if text != "" {
-				sb.WriteString(text)
-				sb.WriteString("\n")
-			}
-		}
-	}
-}
-
-// extractTitle reads an HTML file and returns the content of the <title> tag,
-// stripping any site suffix like " — Generative Plane".
-func extractTitle(htmlPath string) string {
-	data, err := os.ReadFile(htmlPath) // #nosec G304 -- reads post file from configured site dir
-	if err != nil {
-		return "(untitled)"
-	}
-	tokenizer := html.NewTokenizer(strings.NewReader(string(data)))
-	inTitle := false
-	for {
-		tt := tokenizer.Next()
-		switch tt {
-		case html.ErrorToken:
-			return "(untitled)"
-		case html.StartTagToken:
-			tn, _ := tokenizer.TagName()
-			if string(tn) == "title" {
-				inTitle = true
-			}
-		case html.TextToken:
-			if inTitle {
-				title := strings.TrimSpace(tokenizer.Token().Data)
-				// Strip site suffix
-				if idx := strings.Index(title, " — "); idx > 0 {
-					title = title[:idx]
-				}
-				// Also try ASCII dash
-				if idx := strings.Index(title, " - "); idx > 0 {
-					title = title[:idx]
-				}
-				return title
-			}
-		}
-	}
-}
-
-// latestPostID finds the most recently modified post directory.
-func latestPostID(postsDir string) (string, error) {
-	entries, err := os.ReadDir(postsDir)
-	if err != nil {
-		return "", fmt.Errorf("reading posts directory: %w", err)
-	}
-
-	var latestID string
-	var latestTime time.Time
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(latestTime) {
-			latestTime = info.ModTime()
-			latestID = e.Name()
-		}
-	}
-
-	if latestID == "" {
-		return "", fmt.Errorf("no posts found")
-	}
-	return latestID, nil
-}
