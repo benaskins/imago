@@ -79,8 +79,27 @@ func TestWithWeeklyMode(t *testing.T) {
 	if m.Messages[0].Content != "weekly system prompt" {
 		t.Error("expected system prompt to be replaced")
 	}
-	if m.weeklyOutputDir != weeklyDir {
-		t.Errorf("expected weeklyOutputDir %q, got %q", weeklyDir, m.weeklyOutputDir)
+	if m.periodOutputDir != weeklyDir {
+		t.Errorf("expected periodOutputDir %q, got %q", weeklyDir, m.periodOutputDir)
+	}
+}
+
+func TestWithDailyMode(t *testing.T) {
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	dailyDir := t.TempDir()
+	m.WithDailyMode("daily system prompt", dailyDir)
+
+	if m.sessionKind != "daily" {
+		t.Errorf("expected daily kind, got %q", m.sessionKind)
+	}
+	if m.draftPrompt != config.DailyDraftPrompt {
+		t.Error("expected daily draft prompt")
+	}
+	if m.Messages[0].Content != "daily system prompt" {
+		t.Error("expected system prompt to be replaced")
+	}
+	if m.periodOutputDir != dailyDir {
+		t.Errorf("expected periodOutputDir %q, got %q", dailyDir, m.periodOutputDir)
 	}
 }
 

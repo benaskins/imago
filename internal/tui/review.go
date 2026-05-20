@@ -61,9 +61,12 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				var path string
 				var err error
-				if m.sessionKind == "weekly" && m.weeklyOutputDir != "" {
-					path, err = writeWeeklyDraft(m.finalMarkdown, m.weeklyOutputDir)
-				} else {
+				switch {
+				case m.sessionKind == "weekly" && m.periodOutputDir != "":
+					path, err = writePeriodDraft(m.finalMarkdown, m.periodOutputDir, "weekly")
+				case m.sessionKind == "daily" && m.periodOutputDir != "":
+					path, err = writePeriodDraft(m.finalMarkdown, m.periodOutputDir, "daily")
+				default:
 					path, err = writeDraft(m.finalMarkdown)
 				}
 				if err != nil {

@@ -31,13 +31,21 @@ func main() {
 	}
 
 	// Determine mode from subcommand.
-	weekly := len(os.Args) > 1 && os.Args[1] == "weekly"
+	period := ""
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "weekly":
+			period = "weekly"
+		case "daily":
+			period = "daily"
+		}
+	}
 
-	// Weekly mode requires a workspace path argument.
+	// Period modes require a workspace path argument.
 	var workspacePath string
-	if weekly {
+	if period != "" {
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: imago weekly <workspace-path>")
+			fmt.Fprintf(os.Stderr, "usage: imago %s <workspace-path>\n", period)
 			os.Exit(2)
 		}
 		workspacePath = os.Args[2]
@@ -49,11 +57,11 @@ func main() {
 
 	// Select LLM client.
 	var client loop.LLMClient
-	if weekly {
-		// Weekly mode: use Opus for the entire flow.
+	if period != "" {
+		// Period modes (weekly/daily): use Opus for the entire flow.
 		client = selectAnthropicClient()
 		if client == nil {
-			fmt.Fprintf(os.Stderr, "weekly mode requires Anthropic credentials (CLOUDFLARE_AI_GATEWAY_TOKEN + CLOUDFLARE_ACCOUNT_ID, or ANTHROPIC_API_KEY)\n")
+			fmt.Fprintf(os.Stderr, "%s mode requires Anthropic credentials (CLOUDFLARE_AI_GATEWAY_TOKEN + CLOUDFLARE_ACCOUNT_ID, or ANTHROPIC_API_KEY)\n", period)
 			os.Exit(1)
 		}
 	} else {
@@ -77,8 +85,8 @@ func main() {
 	// Check for incomplete session (filtered by kind).
 	sessionDir := home + "/.local/share/imago/sessions"
 	sessionKind := "post"
-	if weekly {
-		sessionKind = "weekly"
+	if period != "" {
+		sessionKind = period
 	}
 	var sess *face.Session
 	if prev := face.FindIncomplete(sessionDir); prev != nil {
@@ -95,8 +103,8 @@ func main() {
 
 	mcfg := config.DefaultModelConfig()
 
-	if weekly {
-		// Weekly mode: Opus for everything.
+	if period != "" {
+		// Period modes: Opus for everything.
 		opusModel := envOrDefault("IMAGO_DRAFT_MODEL", "claude-opus-4-6")
 		mcfg.Provider = config.ProviderAnthropic
 		mcfg.DraftProvider = config.ProviderAnthropic
@@ -111,12 +119,11 @@ func main() {
 
 	model := tui.New(client, mcfg, allTools, sess, sessionDir)
 
-	if weekly {
-		// Run collection pass.
+	if period != "" {
 		fmt.Println("Collecting activity data...")
 		report, err := collect.Run(collect.Config{
 			WorkspacePath: workspacePath,
-			Period:        "weekly",
+			Period:        period,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "collection failed: %v\n", err)
@@ -124,14 +131,20 @@ func main() {
 		}
 		fmt.Printf("Found %d active repos since %s\n", len(report.Repos), report.Since.Format("Jan 2"))
 
-		// Build weekly system prompt with collection data and previous post.
-		weeklyDir := collect.PeriodDir(workspacePath, "weekly")
-		previousWeekly := collect.PreviousPost(weeklyDir, "weekly")
+		outputDir := collect.PeriodDir(workspacePath, period)
+		previous := collect.PreviousPost(outputDir, period)
 		workspaceName := filepath.Base(workspacePath)
-		systemPrompt := config.WeeklySystemPrompt(workspaceName, workspacePath, report.Markdown, previousWeekly)
-		model.WithWeeklyMode(systemPrompt, weeklyDir)
 
-		slog.Info("weekly mode", "model", mcfg.InterviewModel)
+		switch period {
+		case "weekly":
+			systemPrompt := config.WeeklySystemPrompt(workspaceName, workspacePath, report.Markdown, previous)
+			model.WithWeeklyMode(systemPrompt, outputDir)
+		case "daily":
+			systemPrompt := config.DailySystemPrompt(workspaceName, workspacePath, report.Markdown, previous)
+			model.WithDailyMode(systemPrompt, outputDir)
+		}
+
+		slog.Info(period+" mode", "model", mcfg.InterviewModel)
 	}
 
 	p := tea.NewProgram(

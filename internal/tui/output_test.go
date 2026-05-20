@@ -42,20 +42,16 @@ func TestExtractTitle(t *testing.T) {
 	}
 }
 
-func TestWriteWeeklyDraft(t *testing.T) {
-	weeklyDir := t.TempDir()
+func TestWritePeriodDraft_Weekly(t *testing.T) {
+	dir := t.TempDir()
 	md := "# Week notes\n\nbody"
-	path, err := writeWeeklyDraft(md, weeklyDir)
+	path, err := writePeriodDraft(md, dir, "weekly")
 	if err != nil {
-		t.Fatalf("writeWeeklyDraft: %v", err)
+		t.Fatalf("writePeriodDraft: %v", err)
 	}
-	if filepath.Dir(path) != weeklyDir {
-		t.Errorf("expected file in %q, got %q", weeklyDir, path)
-	}
-	base := filepath.Base(path)
 	want := "weekly-" + time.Now().Format("2006-01-02") + ".md"
-	if base != want {
-		t.Errorf("expected filename %q, got %q", want, base)
+	if filepath.Base(path) != want {
+		t.Errorf("expected filename %q, got %q", want, filepath.Base(path))
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -66,11 +62,23 @@ func TestWriteWeeklyDraft(t *testing.T) {
 	}
 }
 
-func TestWriteWeeklyDraft_CreatesDir(t *testing.T) {
+func TestWritePeriodDraft_Daily(t *testing.T) {
+	dir := t.TempDir()
+	path, err := writePeriodDraft("# Daily notes\n\nbody", dir, "daily")
+	if err != nil {
+		t.Fatalf("writePeriodDraft: %v", err)
+	}
+	want := "daily-" + time.Now().Format("2006-01-02") + ".md"
+	if filepath.Base(path) != want {
+		t.Errorf("expected filename %q, got %q", want, filepath.Base(path))
+	}
+}
+
+func TestWritePeriodDraft_CreatesDir(t *testing.T) {
 	root := t.TempDir()
-	nested := filepath.Join(root, ".imago", "weekly")
-	if _, err := writeWeeklyDraft("# hi", nested); err != nil {
-		t.Fatalf("writeWeeklyDraft: %v", err)
+	nested := filepath.Join(root, ".imago", "daily")
+	if _, err := writePeriodDraft("# hi", nested, "daily"); err != nil {
+		t.Fatalf("writePeriodDraft: %v", err)
 	}
 	if _, err := os.Stat(nested); err != nil {
 		t.Errorf("expected dir to be created: %v", err)

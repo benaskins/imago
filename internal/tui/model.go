@@ -65,7 +65,7 @@ type Model struct {
 	sessionKind string // "post" or "weekly"
 
 	// Weekly mode output (set by WithWeeklyMode).
-	weeklyOutputDir string
+	periodOutputDir string
 }
 
 // WithDraftClient sets a separate LLM client for draft/revision phases.
@@ -74,12 +74,24 @@ func (m *Model) WithDraftClient(c loop.LLMClient) {
 }
 
 // WithWeeklyMode configures the model for weekly update writing.
-// weeklyOutputDir is where the final draft will be written as
+// periodOutputDir is where the final draft will be written as
 // weekly-YYYY-MM-DD.md.
-func (m *Model) WithWeeklyMode(systemPrompt, weeklyOutputDir string) {
+func (m *Model) WithWeeklyMode(systemPrompt, periodOutputDir string) {
 	m.sessionKind = "weekly"
 	m.draftPrompt = config.WeeklyDraftPrompt
-	m.weeklyOutputDir = weeklyOutputDir
+	m.periodOutputDir = periodOutputDir
+	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
+		m.Messages[0].Content = systemPrompt
+	}
+}
+
+// WithDailyMode configures the model for daily update writing.
+// dailyOutputDir is where the final draft will be written as
+// daily-YYYY-MM-DD.md.
+func (m *Model) WithDailyMode(systemPrompt, dailyOutputDir string) {
+	m.sessionKind = "daily"
+	m.draftPrompt = config.DailyDraftPrompt
+	m.periodOutputDir = dailyOutputDir
 	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
 		m.Messages[0].Content = systemPrompt
 	}
