@@ -1,6 +1,6 @@
 # imago daily mode
 
-**Status:** Drafted, not started
+**Status:** Complete (2026-05-21)
 **Date:** 2026-05-21
 
 ## Goal

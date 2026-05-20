@@ -14,6 +14,7 @@ A terminal app that interviews you and writes a blog post. Two phases: interview
 
 - `imago`: interview mode for a single post.
 - `imago weekly <workspace-path>`: weekly update mode. Walks `<workspace-path>` for sibling git repos, collects the past week of activity, interviews you with the data, and writes the post to `<workspace-path>/.imago/weekly/weekly-YYYY-MM-DD.md`.
+- `imago daily <workspace-path>`: daily journal mode. Same as weekly but scoped to the last 24h, with a shorter interview and a brief journal-entry output written to `<workspace-path>/.imago/daily/daily-YYYY-MM-DD.md`.
 
 See [a real session](docs/example-session.md) that produced the first imago blog post in 26 minutes.
 
