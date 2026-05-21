@@ -38,6 +38,74 @@ func TestLoadAudience_SelfDailyInheritsRevisionAndReview(t *testing.T) {
 	}
 }
 
+func TestLoadAudience_ManagerDailyHasAllTemplates(t *testing.T) {
+	aud, err := LoadAudience("manager", "daily")
+	if err != nil {
+		t.Fatalf("LoadAudience: %v", err)
+	}
+	if aud.System == nil || aud.Draft == nil {
+		t.Error("expected manager/daily system and draft templates")
+	}
+	if aud.Revision == nil || aud.Review == nil {
+		t.Error("expected revision/review inherited from self via the fallback chain")
+	}
+}
+
+func TestManagerDailyDraft_StatusSections(t *testing.T) {
+	aud, err := LoadAudience("manager", "daily")
+	if err != nil {
+		t.Fatalf("LoadAudience: %v", err)
+	}
+	out, err := aud.Draft.Render(PromptData{})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for _, section := range []string{"What shipped", "In progress", "Blockers", "Next"} {
+		if !strings.Contains(out, section) {
+			t.Errorf("manager/daily draft should mention %q section heading", section)
+		}
+	}
+	// The self/daily draft uses these structural cues; manager/daily should not.
+	for _, journalish := range []string{"What happened", "Daily notes:"} {
+		if strings.Contains(out, journalish) {
+			t.Errorf("manager/daily draft should not contain self/daily structural cue %q", journalish)
+		}
+	}
+}
+
+func TestManagerDailySystem_ShortInterview(t *testing.T) {
+	aud, err := LoadAudience("manager", "daily")
+	if err != nil {
+		t.Fatalf("LoadAudience: %v", err)
+	}
+	out, err := aud.System.Render(samplePeriodData("ws", "/tmp/ws", "(activity)", ""))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	// Manager-facing should signal an even tighter interview than self/daily (3-5).
+	if !strings.Contains(out, "2 to 3 exchanges") {
+		t.Errorf("manager/daily system should signal 2-3 exchanges; got prompt without that signal")
+	}
+	// self/daily system invites "honest, specific reflection"; manager/daily should not.
+	if strings.Contains(out, "honest, specific reflection") {
+		t.Errorf("manager/daily system should not invite personal reflection")
+	}
+}
+
+func TestAvailableAudiences_DailyIncludesManager(t *testing.T) {
+	got := AvailableAudiences("daily")
+	if !contains(got, "manager") {
+		t.Errorf("expected 'manager' in available daily audiences, got %v", got)
+	}
+}
+
+func TestAvailableAudiences_InterviewExcludesManager(t *testing.T) {
+	got := AvailableAudiences("interview")
+	if contains(got, "manager") {
+		t.Errorf("manager has no interview mode but appeared: %v", got)
+	}
+}
+
 func TestAvailableAudiences_IncludesSelf(t *testing.T) {
 	got := AvailableAudiences("interview")
 	if !contains(got, "self") {

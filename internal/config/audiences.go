@@ -107,20 +107,28 @@ func AvailableAudiences(mode string) []string {
 }
 
 // LoadAudience returns the templates for the given audience and mode.
-// System and Draft come from audiences/<audience>/<mode>/. Revision and
-// Review come from the same mode dir if present, else fall back to
-// audiences/<audience>/ (audience-level shared templates).
+// Resolution order (later overrides earlier):
+//  1. audiences/self/ (audience-level baseline — revision/review)
+//  2. audiences/<audience>/ (audience-level overrides)
+//  3. audiences/<audience>/<mode>/ (mode-specific templates — system, draft)
+//
+// Falling back to self at step 1 lets a new audience (e.g. manager)
+// inherit shared revision/review templates without duplicating them.
 // Returns an error if no templates exist at audiences/<audience>/<mode>/.
 func LoadAudience(audience, mode string) (*AudienceTemplates, error) {
 	out := &AudienceTemplates{}
 
-	// Audience-level shared templates (revision, review).
+	if audience != "self" {
+		if err := readTemplatesInto("audiences/self", out); err != nil {
+			return nil, err
+		}
+	}
+
 	audienceDir := "audiences/" + audience
 	if err := readTemplatesInto(audienceDir, out); err != nil {
 		return nil, err
 	}
 
-	// Mode dir overrides (system, draft, and possibly revision/review).
 	modeDir := audienceDir + "/" + mode
 	if _, err := fs.ReadDir(audiencesFS, modeDir); err != nil {
 		return nil, fmt.Errorf("audience %q mode %q: %w", audience, mode, err)
