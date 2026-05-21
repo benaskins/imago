@@ -117,7 +117,13 @@ func main() {
 
 	slog.Info("model config", "provider", mcfg.Provider, "interview", mcfg.InterviewModel, "draft", mcfg.DraftModel)
 
-	model := tui.New(client, mcfg, allTools, sess, sessionDir)
+	interviewAudience, err := config.LoadAudience("self", "interview")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load interview audience: %v\n", err)
+		os.Exit(1)
+	}
+
+	model := tui.New(client, mcfg, allTools, sess, sessionDir, interviewAudience)
 
 	if period != "" {
 		fmt.Println("Collecting activity data...")
@@ -135,13 +141,28 @@ func main() {
 		previous := collect.PreviousPost(outputDir, period)
 		workspaceName := filepath.Base(workspacePath)
 
+		periodAudience, err := config.LoadAudience("self", period)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load %s audience: %v\n", period, err)
+			os.Exit(1)
+		}
+		systemPrompt, err := periodAudience.System.Render(config.PromptData{
+			Date:            config.Today(),
+			WorkspaceName:   workspaceName,
+			WorkspacePath:   workspacePath,
+			ActivityReport:  report.Markdown,
+			PreviousSection: config.PreviousPostSection(period, previous),
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "render %s system prompt: %v\n", period, err)
+			os.Exit(1)
+		}
+
 		switch period {
 		case "weekly":
-			systemPrompt := config.WeeklySystemPrompt(workspaceName, workspacePath, report.Markdown, previous)
-			model.WithWeeklyMode(systemPrompt, outputDir)
+			model.WithWeeklyMode(periodAudience, systemPrompt, outputDir)
 		case "daily":
-			systemPrompt := config.DailySystemPrompt(workspaceName, workspacePath, report.Markdown, previous)
-			model.WithDailyMode(systemPrompt, outputDir)
+			model.WithDailyMode(periodAudience, systemPrompt, outputDir)
 		}
 
 		slog.Info(period+" mode", "model", mcfg.InterviewModel)

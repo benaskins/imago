@@ -5,90 +5,116 @@ import (
 	"testing"
 )
 
-func TestWeeklySystemPrompt_NoBannedStrings(t *testing.T) {
-	prompt := WeeklySystemPrompt("my-workspace", "/tmp/my-workspace", "(activity report)", "")
-	banned := []string{
-		"generativeplane",
-		"getlamina.ai",
-		"lamina",
-		"aurelia",
-		"axon-",
-		"benaskins",
+var bannedStrings = []string{
+	"generativeplane",
+	"getlamina.ai",
+	"lamina",
+	"aurelia",
+	"axon-",
+	"benaskins",
+}
+
+// renderSelf renders the named template from the self audience for the
+// given mode with sample data.
+func renderSelf(t *testing.T, mode, kind string, data PromptData) string {
+	t.Helper()
+	aud, err := LoadAudience("self", mode)
+	if err != nil {
+		t.Fatalf("LoadAudience(self, %s): %v", mode, err)
 	}
-	for _, b := range banned {
+	var tpl *Template
+	switch kind {
+	case "system":
+		tpl = aud.System
+	case "draft":
+		tpl = aud.Draft
+	default:
+		t.Fatalf("unknown kind %q", kind)
+	}
+	out, err := tpl.Render(data)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	return out
+}
+
+func samplePeriodData(workspaceName, workspacePath, activity, previousSection string) PromptData {
+	return PromptData{
+		Date:            Today(),
+		WorkspaceName:   workspaceName,
+		WorkspacePath:   workspacePath,
+		ActivityReport:  activity,
+		PreviousSection: previousSection,
+	}
+}
+
+func TestWeeklySystemPrompt_NoBannedStrings(t *testing.T) {
+	prompt := renderSelf(t, "weekly", "system", samplePeriodData("my-workspace", "/tmp/my-workspace", "(activity report)", ""))
+	for _, b := range bannedStrings {
 		if strings.Contains(prompt, b) {
-			t.Errorf("WeeklySystemPrompt contains banned string %q", b)
+			t.Errorf("self/weekly system contains banned string %q", b)
 		}
 	}
 }
 
 func TestWeeklyDraftPrompt_NoBannedStrings(t *testing.T) {
-	banned := []string{
-		"generativeplane",
-		"getlamina.ai",
-		"lamina",
-		"aurelia",
-		"axon-",
-		"benaskins",
-	}
-	for _, b := range banned {
-		if strings.Contains(WeeklyDraftPrompt, b) {
-			t.Errorf("WeeklyDraftPrompt contains banned string %q", b)
+	prompt := renderSelf(t, "weekly", "draft", PromptData{})
+	for _, b := range bannedStrings {
+		if strings.Contains(prompt, b) {
+			t.Errorf("self/weekly draft contains banned string %q", b)
 		}
 	}
 }
 
 func TestWeeklySystemPrompt_MentionsWorkspaceName(t *testing.T) {
-	prompt := WeeklySystemPrompt("alpaca", "/tmp/alpaca", "", "")
+	prompt := renderSelf(t, "weekly", "system", samplePeriodData("alpaca", "/tmp/alpaca", "", ""))
 	if !strings.Contains(prompt, "alpaca") {
-		t.Error("WeeklySystemPrompt should mention the workspace name")
+		t.Error("self/weekly system should mention the workspace name")
 	}
 }
 
 func TestWeeklySystemPrompt_MentionsWorkspacePath(t *testing.T) {
-	prompt := WeeklySystemPrompt("alpaca", "/tmp/ws-root", "", "")
+	prompt := renderSelf(t, "weekly", "system", samplePeriodData("alpaca", "/tmp/ws-root", "", ""))
 	if !strings.Contains(prompt, "/tmp/ws-root") {
-		t.Error("WeeklySystemPrompt should mention the workspace path so the model knows where to look")
+		t.Error("self/weekly system should mention the workspace path so the model knows where to look")
 	}
 }
 
 func TestDailySystemPrompt_NoBannedStrings(t *testing.T) {
-	prompt := DailySystemPrompt("my-ws", "/tmp/my-ws", "(activity)", "")
-	banned := []string{"generativeplane", "getlamina.ai", "lamina", "aurelia", "axon-", "benaskins"}
-	for _, b := range banned {
+	prompt := renderSelf(t, "daily", "system", samplePeriodData("my-ws", "/tmp/my-ws", "(activity)", ""))
+	for _, b := range bannedStrings {
 		if strings.Contains(prompt, b) {
-			t.Errorf("DailySystemPrompt contains banned string %q", b)
+			t.Errorf("self/daily system contains banned string %q", b)
 		}
 	}
 }
 
 func TestDailyDraftPrompt_NoBannedStrings(t *testing.T) {
-	banned := []string{"generativeplane", "getlamina.ai", "lamina", "aurelia", "axon-", "benaskins"}
-	for _, b := range banned {
-		if strings.Contains(DailyDraftPrompt, b) {
-			t.Errorf("DailyDraftPrompt contains banned string %q", b)
+	prompt := renderSelf(t, "daily", "draft", PromptData{})
+	for _, b := range bannedStrings {
+		if strings.Contains(prompt, b) {
+			t.Errorf("self/daily draft contains banned string %q", b)
 		}
 	}
 }
 
 func TestDailySystemPrompt_MentionsWorkspaceName(t *testing.T) {
-	prompt := DailySystemPrompt("alpaca", "/tmp/alpaca", "", "")
+	prompt := renderSelf(t, "daily", "system", samplePeriodData("alpaca", "/tmp/alpaca", "", ""))
 	if !strings.Contains(prompt, "alpaca") {
-		t.Error("DailySystemPrompt should mention the workspace name")
+		t.Error("self/daily system should mention the workspace name")
 	}
 }
 
 func TestDailySystemPrompt_SignalsShorterInterview(t *testing.T) {
-	prompt := DailySystemPrompt("ws", "/tmp/ws", "", "")
-	// The daily prompt should signal a smaller exchange budget than weekly.
+	prompt := renderSelf(t, "daily", "system", samplePeriodData("ws", "/tmp/ws", "", ""))
 	if strings.Contains(prompt, "8-10") {
-		t.Error("DailySystemPrompt should not use the weekly 8-10 exchange budget")
+		t.Error("self/daily system should not use the weekly 8-10 exchange budget")
 	}
 }
 
-func TestWeeklySystemPrompt_PreviousWeeklySectionConditional(t *testing.T) {
-	with := WeeklySystemPrompt("ws", "/tmp/ws", "", "previous post content")
-	without := WeeklySystemPrompt("ws", "/tmp/ws", "", "")
+func TestWeeklySystemPrompt_PreviousSectionConditional(t *testing.T) {
+	with := renderSelf(t, "weekly", "system", samplePeriodData("ws", "/tmp/ws", "", PreviousPostSection("weekly", "previous post content")))
+	without := renderSelf(t, "weekly", "system", samplePeriodData("ws", "/tmp/ws", "", ""))
 	if !strings.Contains(with, "previous post content") {
 		t.Error("expected previous weekly content to be embedded")
 	}

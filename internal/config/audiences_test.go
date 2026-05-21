@@ -1,218 +1,39 @@
 package config
 
 import (
-	"fmt"
+	"strings"
 	"testing"
-	"time"
 )
 
-func todayFormatted() string {
-	return time.Now().Format("2 January 2006")
-}
-
-func TestSelfInterviewSystem_Parity(t *testing.T) {
-	t.Setenv("DEV", "/tmp/test-workspace")
-
-	expected := SystemPrompt()
-
+func TestLoadAudience_SelfInterviewHasAllTemplates(t *testing.T) {
 	aud, err := LoadAudience("self", "interview")
 	if err != nil {
 		t.Fatalf("LoadAudience: %v", err)
 	}
-	actual, err := aud.System.Render(PromptData{
-		Date:          todayFormatted(),
-		WorkspacePath: "/tmp/test-workspace",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
+	if aud.System == nil {
+		t.Error("expected System template")
 	}
-	if actual != expected {
-		t.Errorf("interview/system parity mismatch\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
+	if aud.Draft == nil {
+		t.Error("expected Draft template")
 	}
-}
-
-func TestSelfInterviewSystem_ParityFallback(t *testing.T) {
-	t.Setenv("DEV", "")
-
-	expected := SystemPrompt()
-	aud, err := LoadAudience("self", "interview")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
+	if aud.Revision == nil {
+		t.Error("expected Revision template (shared at audience level)")
 	}
-	actual, err := aud.System.Render(PromptData{
-		Date:          todayFormatted(),
-		WorkspacePath: "(workspace not configured — set $DEV)",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("interview/system fallback parity mismatch\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
+	if aud.Review == nil {
+		t.Error("expected Review template (shared at audience level)")
 	}
 }
 
-func TestSelfInterviewDraft_Parity(t *testing.T) {
-	aud, err := LoadAudience("self", "interview")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.Draft.Render(PromptData{})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != DraftPrompt {
-		t.Errorf("interview/draft parity mismatch\n--- expected ---\n%q\n--- actual ---\n%q", DraftPrompt, actual)
-	}
-}
-
-func TestSelfInterviewRevision_Parity(t *testing.T) {
-	aud, err := LoadAudience("self", "interview")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	data := PromptData{
-		InterviewTranscript: "transcript body",
-		FullDraft:           "draft body",
-		CurrentSection:      "section body",
-	}
-	expected := fmt.Sprintf(RevisionPromptTemplate, data.InterviewTranscript, data.FullDraft, data.CurrentSection)
-	actual, err := aud.Revision.Render(data)
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("interview/revision parity mismatch\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfInterviewReview_Parity(t *testing.T) {
-	aud, err := LoadAudience("self", "interview")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	data := PromptData{
-		InterviewTranscript: "transcript body",
-		FullArticle:         "article body",
-	}
-	expected := fmt.Sprintf(ReviewPromptTemplate, data.InterviewTranscript, data.FullArticle)
-	actual, err := aud.Review.Render(data)
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("interview/review parity mismatch\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfDailySystem_Parity_NoPrevious(t *testing.T) {
-	expected := DailySystemPrompt("alpaca", "/tmp/alpaca", "(activity report body)", "")
+func TestLoadAudience_SelfDailyInheritsRevisionAndReview(t *testing.T) {
 	aud, err := LoadAudience("self", "daily")
 	if err != nil {
 		t.Fatalf("LoadAudience: %v", err)
 	}
-	actual, err := aud.System.Render(PromptData{
-		WorkspaceName:   "alpaca",
-		WorkspacePath:   "/tmp/alpaca",
-		Date:            todayFormatted(),
-		ActivityReport:  "(activity report body)",
-		PreviousSection: "",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
+	if aud.System == nil || aud.Draft == nil {
+		t.Error("expected daily-specific system + draft")
 	}
-	if actual != expected {
-		t.Errorf("daily/system parity mismatch (no previous)\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfDailySystem_Parity_WithPrevious(t *testing.T) {
-	expected := DailySystemPrompt("alpaca", "/tmp/alpaca", "(activity)", "previous daily body")
-	aud, err := LoadAudience("self", "daily")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.System.Render(PromptData{
-		WorkspaceName:   "alpaca",
-		WorkspacePath:   "/tmp/alpaca",
-		Date:            todayFormatted(),
-		ActivityReport:  "(activity)",
-		PreviousSection: "\n## Previous daily entry (voice and structure reference)\n\nprevious daily body",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("daily/system parity mismatch (with previous)\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfDailyDraft_Parity(t *testing.T) {
-	aud, err := LoadAudience("self", "daily")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.Draft.Render(PromptData{})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != DailyDraftPrompt {
-		t.Errorf("daily/draft parity mismatch")
-	}
-}
-
-func TestSelfWeeklySystem_Parity_NoPrevious(t *testing.T) {
-	expected := WeeklySystemPrompt("alpaca", "/tmp/alpaca", "(activity)", "")
-	aud, err := LoadAudience("self", "weekly")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.System.Render(PromptData{
-		WorkspaceName:   "alpaca",
-		WorkspacePath:   "/tmp/alpaca",
-		Date:            todayFormatted(),
-		ActivityReport:  "(activity)",
-		PreviousSection: "",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("weekly/system parity mismatch (no previous)\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfWeeklySystem_Parity_WithPrevious(t *testing.T) {
-	expected := WeeklySystemPrompt("alpaca", "/tmp/alpaca", "(activity)", "previous weekly body")
-	aud, err := LoadAudience("self", "weekly")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.System.Render(PromptData{
-		WorkspaceName:   "alpaca",
-		WorkspacePath:   "/tmp/alpaca",
-		Date:            todayFormatted(),
-		ActivityReport:  "(activity)",
-		PreviousSection: "\n## Previous weekly post (voice and structure reference)\n\nprevious weekly body",
-	})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != expected {
-		t.Errorf("weekly/system parity mismatch (with previous)\n--- expected ---\n%q\n--- actual ---\n%q", expected, actual)
-	}
-}
-
-func TestSelfWeeklyDraft_Parity(t *testing.T) {
-	aud, err := LoadAudience("self", "weekly")
-	if err != nil {
-		t.Fatalf("LoadAudience: %v", err)
-	}
-	actual, err := aud.Draft.Render(PromptData{})
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	if actual != WeeklyDraftPrompt {
-		t.Errorf("weekly/draft parity mismatch")
+	if aud.Revision == nil || aud.Review == nil {
+		t.Error("expected revision/review to be inherited from audience root")
 	}
 }
 
@@ -225,5 +46,42 @@ func TestLoadAudience_UnknownAudience(t *testing.T) {
 func TestLoadAudience_UnknownMode(t *testing.T) {
 	if _, err := LoadAudience("self", "yearly"); err == nil {
 		t.Error("expected error for unknown mode")
+	}
+}
+
+func TestPreviousPostSection_Empty(t *testing.T) {
+	if got := PreviousPostSection("weekly", ""); got != "" {
+		t.Errorf("expected empty string for empty previous post, got %q", got)
+	}
+}
+
+func TestPreviousPostSection_WeeklyHeading(t *testing.T) {
+	got := PreviousPostSection("weekly", "body")
+	if !strings.Contains(got, "## Previous weekly post") {
+		t.Errorf("expected weekly heading, got %q", got)
+	}
+	if !strings.HasSuffix(got, "body") {
+		t.Errorf("expected previous post body at end, got %q", got)
+	}
+}
+
+func TestPreviousPostSection_DailyHeading(t *testing.T) {
+	got := PreviousPostSection("daily", "body")
+	if !strings.Contains(got, "## Previous daily entry") {
+		t.Errorf("expected daily heading, got %q", got)
+	}
+}
+
+func TestResolveWorkspacePath_Fallback(t *testing.T) {
+	t.Setenv("DEV", "")
+	if got := ResolveWorkspacePath(); !strings.Contains(got, "set $DEV") {
+		t.Errorf("expected fallback message, got %q", got)
+	}
+}
+
+func TestResolveWorkspacePath_FromEnv(t *testing.T) {
+	t.Setenv("DEV", "/tmp/workspace-x")
+	if got := ResolveWorkspacePath(); got != "/tmp/workspace-x" {
+		t.Errorf("expected env value, got %q", got)
 	}
 }

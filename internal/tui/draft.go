@@ -287,11 +287,11 @@ func (m Model) interviewTranscript() string {
 // reviseSection sends the current section to the LLM with full context.
 func (m Model) reviseSection() tea.Cmd {
 	idx := m.sectionIndex
-	systemPrompt := fmt.Sprintf(config.RevisionPromptTemplate,
-		m.interviewTranscript(),
-		m.fullDraft,
-		m.sections[idx],
-	)
+	systemPrompt, _ := m.audience.Revision.Render(config.PromptData{
+		InterviewTranscript: m.interviewTranscript(),
+		FullDraft:           m.fullDraft,
+		CurrentSection:      m.sections[idx],
+	})
 
 	messages := []loop.Message{
 		{Role: loop.RoleSystem, Content: systemPrompt},

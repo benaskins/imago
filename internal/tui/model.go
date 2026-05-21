@@ -56,15 +56,20 @@ type Model struct {
 	reviewHistory []loop.Message
 	reviewEntries []face.Entry
 
-	// Prompt overrides
-	draftPrompt string // defaults to config.DraftPrompt
+	// Active audience templates for the current mode. System and Draft
+	// are swapped out by WithWeeklyMode/WithDailyMode; Revision and Review
+	// are shared at the audience level.
+	audience *config.AudienceTemplates
+
+	// Pre-rendered draft prompt for the active mode.
+	draftPrompt string
 
 	// Session persistence
 	session     *face.Session
 	sessionDir  string
-	sessionKind string // "post" or "weekly"
+	sessionKind string // "post", "weekly", or "daily"
 
-	// Weekly mode output (set by WithWeeklyMode).
+	// Weekly/daily mode output (set by WithWeeklyMode/WithDailyMode).
 	periodOutputDir string
 }
 
@@ -74,11 +79,14 @@ func (m *Model) WithDraftClient(c loop.LLMClient) {
 }
 
 // WithWeeklyMode configures the model for weekly update writing.
-// periodOutputDir is where the final draft will be written as
-// weekly-YYYY-MM-DD.md.
-func (m *Model) WithWeeklyMode(systemPrompt, periodOutputDir string) {
+// audience supplies the weekly system/draft templates (revision/review
+// come from the audience-level templates already loaded). systemPrompt
+// is the pre-rendered weekly system prompt. periodOutputDir is where
+// the final draft is written as weekly-YYYY-MM-DD.md.
+func (m *Model) WithWeeklyMode(audience *config.AudienceTemplates, systemPrompt, periodOutputDir string) {
 	m.sessionKind = "weekly"
-	m.draftPrompt = config.WeeklyDraftPrompt
+	m.audience = audience
+	m.draftPrompt, _ = audience.Draft.Render(config.PromptData{})
 	m.periodOutputDir = periodOutputDir
 	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
 		m.Messages[0].Content = systemPrompt
@@ -86,11 +94,13 @@ func (m *Model) WithWeeklyMode(systemPrompt, periodOutputDir string) {
 }
 
 // WithDailyMode configures the model for daily update writing.
-// dailyOutputDir is where the final draft will be written as
-// daily-YYYY-MM-DD.md.
-func (m *Model) WithDailyMode(systemPrompt, dailyOutputDir string) {
+// audience supplies the daily system/draft templates. systemPrompt is
+// the pre-rendered daily system prompt. dailyOutputDir is where the
+// final draft is written as daily-YYYY-MM-DD.md.
+func (m *Model) WithDailyMode(audience *config.AudienceTemplates, systemPrompt, dailyOutputDir string) {
 	m.sessionKind = "daily"
-	m.draftPrompt = config.DailyDraftPrompt
+	m.audience = audience
+	m.draftPrompt, _ = audience.Draft.Render(config.PromptData{})
 	m.periodOutputDir = dailyOutputDir
 	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
 		m.Messages[0].Content = systemPrompt
@@ -106,18 +116,26 @@ func (m *Model) draftLLMClient() loop.LLMClient {
 }
 
 // New creates a new Model with the given LLM client and tools.
-func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir string) Model {
+// interviewAudience supplies the interview-mode templates; period-mode
+// callers swap System/Draft via With{Weekly,Daily}Mode.
+func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir string, interviewAudience *config.AudienceTemplates) Model {
 	chat := face.New("imago")
+	systemPrompt, _ := interviewAudience.System.Render(config.PromptData{
+		Date:          config.Today(),
+		WorkspacePath: config.ResolveWorkspacePath(),
+	})
 	chat.Messages = []loop.Message{
-		{Role: loop.RoleSystem, Content: config.SystemPrompt()},
+		{Role: loop.RoleSystem, Content: systemPrompt},
 	}
+	draftPrompt, _ := interviewAudience.Draft.Render(config.PromptData{})
 
 	m := Model{
 		Chat:        chat,
 		phase:       phaseInterview,
 		client:      client,
 		mcfg:        mcfg,
-		draftPrompt: config.DraftPrompt,
+		audience:    interviewAudience,
+		draftPrompt: draftPrompt,
 		tools:       tools,
 		session:     sess,
 		sessionDir:  sessionDir,

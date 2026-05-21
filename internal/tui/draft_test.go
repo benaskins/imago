@@ -34,18 +34,22 @@ func TestAssembleDraft(t *testing.T) {
 }
 
 func TestInterviewTranscript(t *testing.T) {
+	aud := mustInterviewAudience(t)
+	systemPrompt, _ := aud.System.Render(config.PromptData{Date: config.Today(), WorkspacePath: config.ResolveWorkspacePath()})
+	draftPrompt, _ := aud.Draft.Render(config.PromptData{})
+
 	chat := face.New("imago")
 	chat.Messages = []loop.Message{
-		{Role: loop.RoleSystem, Content: config.SystemPrompt()},
+		{Role: loop.RoleSystem, Content: systemPrompt},
 		{Role: loop.RoleAssistant, Content: "What do you want to write about?"},
 		{Role: loop.RoleUser, Content: "Building local AI tools."},
 		{Role: loop.RoleAssistant, Content: "Tell me more."},
 		{Role: loop.RoleUser, Content: "It's about composability."},
-		{Role: loop.RoleUser, Content: config.DraftPrompt}, // should be excluded
+		{Role: loop.RoleUser, Content: draftPrompt}, // should be excluded
 	}
 	m := Model{
 		Chat:        chat,
-		draftPrompt: config.DraftPrompt,
+		draftPrompt: draftPrompt,
 	}
 
 	transcript := m.interviewTranscript()
@@ -53,7 +57,7 @@ func TestInterviewTranscript(t *testing.T) {
 	if strings.Contains(transcript, "journalist") {
 		t.Error("transcript should not contain system prompt content")
 	}
-	if strings.Contains(transcript, config.DraftPrompt) {
+	if strings.Contains(transcript, draftPrompt) {
 		t.Error("transcript should not contain draft prompt")
 	}
 	if !strings.Contains(transcript, "Building local AI tools.") {

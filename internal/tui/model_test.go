@@ -21,7 +21,7 @@ func (c stubClient) Chat(_ context.Context, _ *loop.Request, fn func(loop.Respon
 }
 
 func TestNewModel(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 
 	if m.phase != phaseInterview {
 		t.Errorf("expected interview phase, got %d", m.phase)
@@ -42,7 +42,7 @@ func TestNewModelResumeSession(t *testing.T) {
 		{Role: loop.RoleAssistant, Content: "hi there"},
 	}
 
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, sess, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, sess, t.TempDir(), mustInterviewAudience(t))
 
 	if len(m.Messages) != 3 {
 		t.Errorf("expected 3 messages, got %d", len(m.Messages))
@@ -53,7 +53,7 @@ func TestNewModelResumeSession(t *testing.T) {
 }
 
 func TestViewInterview(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 
 	// Initialize viewport with a window size
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
@@ -66,14 +66,16 @@ func TestViewInterview(t *testing.T) {
 }
 
 func TestWithWeeklyMode(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 	weeklyDir := t.TempDir()
-	m.WithWeeklyMode("weekly system prompt", weeklyDir)
+	weeklyAud := mustAudience(t, "self", "weekly")
+	m.WithWeeklyMode(weeklyAud, "weekly system prompt", weeklyDir)
 
 	if m.sessionKind != "weekly" {
 		t.Errorf("expected weekly kind, got %q", m.sessionKind)
 	}
-	if m.draftPrompt != config.WeeklyDraftPrompt {
+	expected, _ := weeklyAud.Draft.Render(config.PromptData{})
+	if m.draftPrompt != expected {
 		t.Error("expected weekly draft prompt")
 	}
 	if m.Messages[0].Content != "weekly system prompt" {
@@ -85,14 +87,16 @@ func TestWithWeeklyMode(t *testing.T) {
 }
 
 func TestWithDailyMode(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 	dailyDir := t.TempDir()
-	m.WithDailyMode("daily system prompt", dailyDir)
+	dailyAud := mustAudience(t, "self", "daily")
+	m.WithDailyMode(dailyAud, "daily system prompt", dailyDir)
 
 	if m.sessionKind != "daily" {
 		t.Errorf("expected daily kind, got %q", m.sessionKind)
 	}
-	if m.draftPrompt != config.DailyDraftPrompt {
+	expected, _ := dailyAud.Draft.Render(config.PromptData{})
+	if m.draftPrompt != expected {
 		t.Error("expected daily draft prompt")
 	}
 	if m.Messages[0].Content != "daily system prompt" {
@@ -103,8 +107,22 @@ func TestWithDailyMode(t *testing.T) {
 	}
 }
 
+func mustInterviewAudience(t *testing.T) *config.AudienceTemplates {
+	t.Helper()
+	return mustAudience(t, "self", "interview")
+}
+
+func mustAudience(t *testing.T, audience, mode string) *config.AudienceTemplates {
+	t.Helper()
+	a, err := config.LoadAudience(audience, mode)
+	if err != nil {
+		t.Fatalf("LoadAudience(%q, %q): %v", audience, mode, err)
+	}
+	return a
+}
+
 func TestPhaseSwitch(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 
@@ -118,7 +136,7 @@ func TestPhaseSwitch(t *testing.T) {
 }
 
 func TestShowCurrentSection(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 
@@ -148,7 +166,7 @@ func TestShowCurrentSection(t *testing.T) {
 }
 
 func TestShowReview(t *testing.T) {
-	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir())
+	m := New(stubClient{}, config.OpenAIModelConfig(), nil, nil, t.TempDir(), mustInterviewAudience(t))
 	resize := tea.WindowSizeMsg{Width: 80, Height: 24}
 	m.Chat.HandleResize(resize)
 

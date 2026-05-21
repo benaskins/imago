@@ -136,10 +136,10 @@ func (m Model) updateReview(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) sendReview() tea.Cmd {
-	systemPrompt := fmt.Sprintf(config.ReviewPromptTemplate,
-		m.interviewTranscript(),
-		m.finalMarkdown,
-	)
+	systemPrompt, _ := m.audience.Review.Render(config.PromptData{
+		InterviewTranscript: m.interviewTranscript(),
+		FullArticle:         m.finalMarkdown,
+	})
 
 	messages := []loop.Message{
 		{Role: loop.RoleSystem, Content: systemPrompt},
