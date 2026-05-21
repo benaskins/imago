@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -83,6 +84,26 @@ type AudienceTemplates struct {
 	Draft    *Template
 	Revision *Template
 	Review   *Template
+}
+
+// AvailableAudiences returns the sorted names of audiences that
+// support the given mode (i.e., audiences/<name>/<mode>/ exists).
+func AvailableAudiences(mode string) []string {
+	entries, err := fs.ReadDir(audiencesFS, "audiences")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := fs.ReadDir(audiencesFS, "audiences/"+e.Name()+"/"+mode); err == nil {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // LoadAudience returns the templates for the given audience and mode.

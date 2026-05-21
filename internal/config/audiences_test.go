@@ -1,6 +1,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -35,6 +36,31 @@ func TestLoadAudience_SelfDailyInheritsRevisionAndReview(t *testing.T) {
 	if aud.Revision == nil || aud.Review == nil {
 		t.Error("expected revision/review to be inherited from audience root")
 	}
+}
+
+func TestAvailableAudiences_IncludesSelf(t *testing.T) {
+	got := AvailableAudiences("interview")
+	if !contains(got, "self") {
+		t.Errorf("expected 'self' in available interview audiences, got %v", got)
+	}
+}
+
+func TestAvailableAudiences_DailyIncludesSelf(t *testing.T) {
+	got := AvailableAudiences("daily")
+	if !contains(got, "self") {
+		t.Errorf("expected 'self' in available daily audiences, got %v", got)
+	}
+}
+
+func TestAvailableAudiences_UnknownMode(t *testing.T) {
+	got := AvailableAudiences("yearly")
+	if len(got) != 0 {
+		t.Errorf("expected no audiences for unknown mode, got %v", got)
+	}
+}
+
+func contains(haystack []string, needle string) bool {
+	return slices.Contains(haystack, needle)
 }
 
 func TestLoadAudience_UnknownAudience(t *testing.T) {

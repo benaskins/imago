@@ -45,6 +45,18 @@ func PeriodDir(workspacePath, period string) string {
 	return filepath.Join(workspacePath, ".imago", period)
 }
 
+// AudienceDir returns the period output directory for the given
+// audience. The default audience "self" writes to PeriodDir; other
+// audiences nest under PeriodDir/<audience>/ so they don't collide
+// with self-audience output.
+func AudienceDir(workspacePath, period, audience string) string {
+	dir := PeriodDir(workspacePath, period)
+	if audience == "" || audience == "self" {
+		return dir
+	}
+	return filepath.Join(dir, audience)
+}
+
 // ValidateWorkspace returns an error if path is not a directory containing
 // at least one git repo (direct or nested, up to the discoverRepos depth bound).
 func ValidateWorkspace(path string) error {

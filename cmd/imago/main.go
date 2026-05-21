@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -30,25 +32,12 @@ func main() {
 		defer cleanup()
 	}
 
-	// Determine mode from subcommand.
-	period := ""
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "weekly":
-			period = "weekly"
-		case "daily":
-			period = "daily"
-		}
+	period, audience, workspacePath := parseArgs(os.Args[1:])
+	mode := period
+	if mode == "" {
+		mode = "interview"
 	}
-
-	// Period modes require a workspace path argument.
-	var workspacePath string
 	if period != "" {
-		if len(os.Args) < 3 {
-			fmt.Fprintf(os.Stderr, "usage: imago %s <workspace-path>\n", period)
-			os.Exit(2)
-		}
-		workspacePath = os.Args[2]
 		if err := collect.ValidateWorkspace(workspacePath); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(2)
@@ -82,12 +71,18 @@ func main() {
 
 	allTools := tools.All(cfg)
 
+	// Load the active mode's audience. Fail fast with the available
+	// audiences for this mode if the user picked one we don't have.
+	activeAudience, err := config.LoadAudience(audience, mode)
+	if err != nil {
+		available := config.AvailableAudiences(mode)
+		fmt.Fprintf(os.Stderr, "audience %q is not available for mode %q. available: %s\n", audience, mode, strings.Join(available, ", "))
+		os.Exit(2)
+	}
+	sessionKind := mode + ":" + audience
+
 	// Check for incomplete session (filtered by kind).
 	sessionDir := home + "/.local/share/imago/sessions"
-	sessionKind := "post"
-	if period != "" {
-		sessionKind = period
-	}
 	var sess *face.Session
 	if prev := face.FindIncomplete(sessionDir); prev != nil {
 		prevKind, _ := prev.State["kind"].(string)
@@ -117,15 +112,19 @@ func main() {
 
 	slog.Info("model config", "provider", mcfg.Provider, "interview", mcfg.InterviewModel, "draft", mcfg.DraftModel)
 
-	interviewAudience, err := config.LoadAudience("self", "interview")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "load interview audience: %v\n", err)
-		os.Exit(1)
-	}
-
-	model := tui.New(client, mcfg, allTools, sess, sessionDir, interviewAudience)
-
-	if period != "" {
+	// Render the initial system prompt and (for period modes) collect
+	// the activity report.
+	var systemPrompt, outputDir string
+	if period == "" {
+		systemPrompt, err = activeAudience.System.Render(config.PromptData{
+			Date:          config.Today(),
+			WorkspacePath: config.ResolveWorkspacePath(),
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "render interview system prompt: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
 		fmt.Println("Collecting activity data...")
 		report, err := collect.Run(collect.Config{
 			WorkspacePath: workspacePath,
@@ -137,16 +136,11 @@ func main() {
 		}
 		fmt.Printf("Found %d active repos since %s\n", len(report.Repos), report.Since.Format("Jan 2"))
 
-		outputDir := collect.PeriodDir(workspacePath, period)
+		outputDir = collect.AudienceDir(workspacePath, period, audience)
 		previous := collect.PreviousPost(outputDir, period)
 		workspaceName := filepath.Base(workspacePath)
 
-		periodAudience, err := config.LoadAudience("self", period)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "load %s audience: %v\n", period, err)
-			os.Exit(1)
-		}
-		systemPrompt, err := periodAudience.System.Render(config.PromptData{
+		systemPrompt, err = activeAudience.System.Render(config.PromptData{
 			Date:            config.Today(),
 			WorkspaceName:   workspaceName,
 			WorkspacePath:   workspacePath,
@@ -157,15 +151,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "render %s system prompt: %v\n", period, err)
 			os.Exit(1)
 		}
+	}
 
-		switch period {
-		case "weekly":
-			model.WithWeeklyMode(periodAudience, systemPrompt, outputDir)
-		case "daily":
-			model.WithDailyMode(periodAudience, systemPrompt, outputDir)
-		}
-
-		slog.Info(period+" mode", "model", mcfg.InterviewModel)
+	model := tui.New(client, mcfg, allTools, sess, sessionDir, sessionKind, activeAudience, systemPrompt)
+	if outputDir != "" {
+		model.WithPeriodOutput(outputDir)
+	}
+	if period != "" {
+		slog.Info(period+" mode", "audience", audience, "model", mcfg.InterviewModel)
 	}
 
 	p := tea.NewProgram(
@@ -232,4 +225,37 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseArgs parses the imago command line. Supported shapes:
+//
+//	imago [--audience NAME]
+//	imago daily [--audience NAME] <workspace-path>
+//	imago weekly [--audience NAME] <workspace-path>
+//
+// Returns the period ("" for interview mode), the chosen audience
+// (default "self"), and the workspace path (empty for interview mode).
+func parseArgs(args []string) (period, audience, workspacePath string) {
+	audience = "self"
+	switch {
+	case len(args) > 0 && (args[0] == "daily" || args[0] == "weekly"):
+		period = args[0]
+		fs := flag.NewFlagSet(period, flag.ExitOnError)
+		fs.StringVar(&audience, "audience", "self", "audience prompt set to use")
+		fs.Usage = func() {
+			fmt.Fprintf(os.Stderr, "usage: imago %s [--audience NAME] <workspace-path>\n", period)
+			fs.PrintDefaults()
+		}
+		_ = fs.Parse(args[1:])
+		if fs.NArg() < 1 {
+			fs.Usage()
+			os.Exit(2)
+		}
+		workspacePath = fs.Arg(0)
+	default:
+		fs := flag.NewFlagSet("imago", flag.ExitOnError)
+		fs.StringVar(&audience, "audience", "self", "audience prompt set to use")
+		_ = fs.Parse(args)
+	}
+	return period, audience, workspacePath
 }

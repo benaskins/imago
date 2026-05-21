@@ -78,33 +78,11 @@ func (m *Model) WithDraftClient(c loop.LLMClient) {
 	m.draftClient = c
 }
 
-// WithWeeklyMode configures the model for weekly update writing.
-// audience supplies the weekly system/draft templates (revision/review
-// come from the audience-level templates already loaded). systemPrompt
-// is the pre-rendered weekly system prompt. periodOutputDir is where
-// the final draft is written as weekly-YYYY-MM-DD.md.
-func (m *Model) WithWeeklyMode(audience *config.AudienceTemplates, systemPrompt, periodOutputDir string) {
-	m.sessionKind = "weekly"
-	m.audience = audience
-	m.draftPrompt, _ = audience.Draft.Render(config.PromptData{})
+// WithPeriodOutput records the directory where the final period-mode
+// draft will be written (e.g. <ws>/.imago/daily/). Empty for interview
+// mode.
+func (m *Model) WithPeriodOutput(periodOutputDir string) {
 	m.periodOutputDir = periodOutputDir
-	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
-		m.Messages[0].Content = systemPrompt
-	}
-}
-
-// WithDailyMode configures the model for daily update writing.
-// audience supplies the daily system/draft templates. systemPrompt is
-// the pre-rendered daily system prompt. dailyOutputDir is where the
-// final draft is written as daily-YYYY-MM-DD.md.
-func (m *Model) WithDailyMode(audience *config.AudienceTemplates, systemPrompt, dailyOutputDir string) {
-	m.sessionKind = "daily"
-	m.audience = audience
-	m.draftPrompt, _ = audience.Draft.Render(config.PromptData{})
-	m.periodOutputDir = dailyOutputDir
-	if len(m.Messages) > 0 && m.Messages[0].Role == loop.RoleSystem {
-		m.Messages[0].Content = systemPrompt
-	}
 }
 
 // draftLLMClient returns the client to use for draft/revision phases.
@@ -115,30 +93,30 @@ func (m *Model) draftLLMClient() loop.LLMClient {
 	return m.client
 }
 
-// New creates a new Model with the given LLM client and tools.
-// interviewAudience supplies the interview-mode templates; period-mode
-// callers swap System/Draft via With{Weekly,Daily}Mode.
-func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir string, interviewAudience *config.AudienceTemplates) Model {
+// New creates a new Model with the given LLM client, tools, session
+// kind, audience, and pre-rendered system prompt. The caller is
+// responsible for rendering the system prompt with whatever data the
+// active mode needs (date + workspace path for interview mode,
+// workspace + activity report for period modes). sessionKind takes the
+// form "<mode>:<audience>" (e.g. "interview:self", "daily:manager").
+func New(client loop.LLMClient, mcfg config.ModelConfig, tools map[string]tool.ToolDef, sess *face.Session, sessionDir, sessionKind string, audience *config.AudienceTemplates, systemPrompt string) Model {
 	chat := face.New("imago")
-	systemPrompt, _ := interviewAudience.System.Render(config.PromptData{
-		Date:          config.Today(),
-		WorkspacePath: config.ResolveWorkspacePath(),
-	})
 	chat.Messages = []loop.Message{
 		{Role: loop.RoleSystem, Content: systemPrompt},
 	}
-	draftPrompt, _ := interviewAudience.Draft.Render(config.PromptData{})
+	draftPrompt, _ := audience.Draft.Render(config.PromptData{})
 
 	m := Model{
 		Chat:        chat,
 		phase:       phaseInterview,
 		client:      client,
 		mcfg:        mcfg,
-		audience:    interviewAudience,
+		audience:    audience,
 		draftPrompt: draftPrompt,
 		tools:       tools,
 		session:     sess,
 		sessionDir:  sessionDir,
+		sessionKind: sessionKind,
 	}
 
 	// Restore from session if resuming

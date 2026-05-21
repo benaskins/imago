@@ -113,6 +113,23 @@ func TestPeriodDir(t *testing.T) {
 	}
 }
 
+func TestAudienceDir_SelfMatchesPeriodDir(t *testing.T) {
+	want := PeriodDir("/tmp/ws", "daily")
+	if got := AudienceDir("/tmp/ws", "daily", "self"); got != want {
+		t.Errorf("AudienceDir self = %q, want %q", got, want)
+	}
+	if got := AudienceDir("/tmp/ws", "daily", ""); got != want {
+		t.Errorf("AudienceDir empty audience = %q, want %q", got, want)
+	}
+}
+
+func TestAudienceDir_NonSelfNestsUnderPeriod(t *testing.T) {
+	want := filepath.Join("/tmp/ws", ".imago", "daily", "manager")
+	if got := AudienceDir("/tmp/ws", "daily", "manager"); got != want {
+		t.Errorf("AudienceDir manager = %q, want %q", got, want)
+	}
+}
+
 func TestRenderMarkdown(t *testing.T) {
 	since, _ := time.Parse("2006-01-02", "2026-03-15")
 	report := &Report{
