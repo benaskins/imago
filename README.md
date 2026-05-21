@@ -16,6 +16,19 @@ A terminal app that interviews you and writes a blog post. Two phases: interview
 - `imago weekly <workspace-path>`: weekly update mode. Walks `<workspace-path>` for sibling git repos, collects the past week of activity, interviews you with the data, and writes the post to `<workspace-path>/.imago/weekly/weekly-YYYY-MM-DD.md`.
 - `imago daily <workspace-path>`: daily journal mode. Same as weekly but scoped to the last 24h, with a shorter interview and a brief journal-entry output written to `<workspace-path>/.imago/daily/daily-YYYY-MM-DD.md`.
 
+### Audiences
+
+Every mode accepts `--audience <name>` (default `self`). The audience selects the prompt set that drives the interview and the draft.
+
+- `--audience self`: personal voice, journal/essay output (the default).
+- `--audience manager`: short manager-facing status update (What shipped / In progress / Blockers / Next). Available on `daily`. Output goes to `<workspace>/.imago/daily/manager/`.
+
+```bash
+imago daily ~/dev --audience manager
+```
+
+Audiences are embedded prompt templates under `internal/config/audiences/<name>/<mode>/`. Adding a new audience is two files (system and draft).
+
 See [a real session](docs/example-session.md) that produced the first imago blog post in 26 minutes.
 
 ## Requirements

@@ -1,6 +1,6 @@
 # imago --audience flag
 
-**Status:** Proposed
+**Status:** Complete (2026-05-21)
 **Date:** 2026-05-21
 
 ## Goal

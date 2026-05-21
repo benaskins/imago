@@ -22,16 +22,33 @@ just install   # copies to ~/.local/bin/imago
 - `imago weekly <workspace-path>`: weekly update mode. Walks the workspace root for sibling git repos, collects the past week of activity, interviews you (~8-10 exchanges) with the data, writes a weekly post to `<workspace-path>/.imago/weekly/weekly-YYYY-MM-DD.md`. Uses Anthropic (Opus) via Cloudflare AI Gateway.
 - `imago daily <workspace-path>`: daily update mode. Same machinery as weekly, scoped to the last 24h. Shorter interview (~3-5 exchanges) and shorter journal-entry output (~200-400 words). Writes to `<workspace-path>/.imago/daily/daily-YYYY-MM-DD.md`.
 
+### Audiences
+
+Every mode accepts `--audience <name>` (default: `self`). The audience selects which prompt set drives the interview and the draft, plus where the output is written when it is not the default.
+
+| Audience | Modes | Output |
+|---|---|---|
+| `self` | interview, daily, weekly | `<ws>/.imago/<period>/<period>-YYYY-MM-DD.md` (period modes); `~/Documents/imago/` (interview) |
+| `manager` | daily | `<ws>/.imago/daily/manager/daily-YYYY-MM-DD.md` — short status report (What shipped / In progress / Blockers / Next), 150-300 words |
+
+Example:
+```bash
+imago daily ~/dev --audience manager
+```
+
+Adding a new audience is two files. Create `internal/config/audiences/<name>/<mode>/system.tmpl` and `draft.tmpl`. Revision and review templates are inherited from `audiences/self/` unless overridden. See the existing `manager/daily/` for a minimal example.
+
 ## Structure
 
 ```
-cmd/imago/main.go       entry point, LLM client selection, mode dispatch
-internal/tui/           Bubble Tea model, interview/draft/review phases
-internal/config/        model config, system prompts, draft prompts
-internal/session/       JSON session persistence (~/.local/share/imago/sessions/)
-internal/collect/       git activity collection for weekly/daily modes
-internal/logging/       structured logging
-tools/tools.go          axon-tool definitions (repo_overview, git_log, search, fetch_page, recall, etc.)
+cmd/imago/main.go            entry point, LLM client selection, mode + audience dispatch
+internal/tui/                Bubble Tea model, interview/draft/review phases
+internal/config/             model config and audience registry (text/template-based)
+internal/config/audiences/   embedded prompt templates: <audience>/<mode>/*.tmpl
+internal/session/            JSON session persistence (~/.local/share/imago/sessions/)
+internal/collect/            git activity collection for weekly/daily modes
+internal/logging/            structured logging
+tools/tools.go               axon-tool definitions (repo_overview, git_log, search, fetch_page, recall, etc.)
 ```
 
 ## Key dependencies
@@ -67,7 +84,7 @@ All axon modules use local `replace` directives to `/Users/benaskins/dev/lamina/
 2. `/draft`: LLM generates full markdown draft from transcript
 3. Section review: draft split by headings, approve (`/keep`) or give feedback per section
 4. Final review: full article view, give feedback or `/done`
-5. Draft saved to `~/Documents/imago/<slug>.md` (interview mode) or `<workspace>/.imago/<period>/<period>-YYYY-MM-DD.md` (weekly/daily modes)
+5. Draft saved to `~/Documents/imago/<slug>.md` (interview mode) or `<workspace>/.imago/<period>/<period>-YYYY-MM-DD.md` (weekly/daily modes, default `self` audience). Non-default audiences nest under `<workspace>/.imago/<period>/<audience>/`.
 
 ## Session persistence
 
